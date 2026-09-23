@@ -1,36 +1,113 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Product Enricher
 
-## Getting Started
+Drop documents, spec sheets, price lists, or product photos into the app. It reads them,
+finds the products inside, matches them against a BigCommerce channel, and queues reviewable
+create/update actions that you approve before anything is written back.
 
-First, run the development server:
+- **Store:** `flawless` — Flawless Demo (`ufbonfrcnz`)
+- **Channel:** Flawless Vape UK Distribution (`1`) — 1,607 products
+- **Model:** `gpt-5.6-luna`, `reasoning_effort=low` (both configurable in `.env.local`)
+
+For architecture and implementation details, see **[docs/DETAILS.md](docs/DETAILS.md)**.
+
+## Run it
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+cp .env.example .env.local   # then fill in BIGCOMMERCE_ACCESS_TOKEN and OPENAI_API_KEY
+npm run dev                  # http://localhost:3210
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Requires Node 20+. Run from the repo root — OCR reads its language data from `./ocr`.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## What it does
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+| Input | Pipeline |
+| --- | --- |
+| PDF / DOCX / CSV / TXT | text extraction → document analysis → per-product match → queue |
+| JPG / PNG / WEBP (packshot) | OCR (`tesseract.js`) + filename terms + vision analysis → match → queue |
+| JPG / PNG (photo of a page or handwritten note) | vision triage detects a document, transcribes it, then runs the document pipeline |
+| Pasted text | same as documents |
 
-## Learn More
+- **Background analysis.** An upload returns in ~70ms. The work runs in Next's `after()` and
+  each source shows up in the action queue as **Analyzing** until it finishes. The dropzone stays
+  usable, so you can keep adding files.
+- **Two-stage matching.** An exact SKU (or variant SKU) lookup short-circuits the model; otherwise
+  the channel is keyword-searched and the model scores the shortlist.
+- **Only new information.** Values that already match the catalog are dropped before an action is
+  queued.
+- **Human approval.** Nothing reaches BigCommerce until you press **Apply** in the review modal,
+  where you can re-point the action at another product or variant, edit values, or drop fields.
 
-To learn more about Next.js, take a look at the following resources:
+## Configuration
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Every key is documented in [`.env.example`](.env.example).
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+| Variable | Required | Default |
+| --- | --- | --- |
+| `BIGCOMMERCE_STORE_HASH` | yes | — |
+| `BIGCOMMERCE_ACCESS_TOKEN` | yes | — |
+| `BIGCOMMERCE_CHANNEL_ID` / `BIGCOMMERCE_CHANNEL_NAME` | no | `1` / `Default channel` |
+| `OPENAI_API_KEY` | yes | — |
+| `OPENAI_MODEL` / `OPENAI_VISION_MODEL` | no | `gpt-5.6-luna` |
+| `OPENAI_REASONING_EFFORT` | no | `low` |
+| `DATABASE_PATH` / `UPLOAD_DIR` | no | `./data/enricher.db` / `./data/uploads` |
+| `TURSO_DATABASE_URL` / `TURSO_AUTH_TOKEN` | deployed only | — |
+| `BLOB_READ_WRITE_TOKEN` | deployed only | — |
 
-## Deploy on Vercel
+## Storage
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+The data layer is switched by environment variables, so local dev and a deployment run the same
+code:
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+| | Local (default) | Configured |
+| --- | --- | --- |
+| Queue | SQLite file at `DATABASE_PATH` | Turso, via `TURSO_DATABASE_URL` + `TURSO_AUTH_TOKEN` |
+| Uploads | `UPLOAD_DIR` on disk | Private Vercel Blob, via `BLOB_READ_WRITE_TOKEN` |
+
+On Vercel the app refuses to start unless all three remote variables are set.
+
+## File retention
+
+Uploaded files are kept only while they are still needed:
+
+| Source | Stored? |
+| --- | --- |
+| PDF / DOCX / CSV / TXT | **Never written to storage** — text is extracted in memory and discarded |
+| Pasted text | Never written to storage |
+| Photo of a document or handwritten note | Deleted immediately after transcription; only the filename is kept |
+| Image that matches no product | Deleted immediately |
+| Product packshot queued for upload | Kept only until its action is applied, cancelled, or deleted |
+
+An orphan sweep runs after every analysis. What persists is the extracted *text* — field values
+and the source sentence quoted as evidence — not the original file.
+
+## Deployment
+
+The code is ready for Vercel + Turso + Vercel Blob. Deployment is **on hold pending GRC review**
+([submit here](https://bigcommercecloud.atlassian.net/servicedesk/customer/portal/5/group/1116)).
+The app has no authentication of its own, so a deployment needs Vercel Deployment Protection or an
+auth layer in front of it. See [docs/DETAILS.md § Deployment](docs/DETAILS.md#deployment).
+
+## Fixtures
+
+```bash
+npm run fixtures:images   # 50 product images → fixtures/images/ + images-manifest.json
+npm run fixtures:strip    # remove those images from every other product (--dry to preview)
+npm run fixtures:docs     # regenerate the DOCX / PDF / CSV supplier documents
+npm run fixtures:note     # regenerate the handwritten buyer's note
+```
+
+`fixtures/docs/` holds synthetic supplier spec sheets, a Q4 price list, a data-correction email,
+a new-line notification, and photographed handwritten buyer's notes. The spec sheets and price
+list cite **real products** in the channel (update path); the new-line documents describe invented
+products (create path). `fixtures/images-manifest.json` marks the 25 images removed from the store —
+re-upload one and it should match straight back to its product.
+
+## Scripts
+
+| Command | Purpose |
+| --- | --- |
+| `npm run dev` | Dev server on port 3210 |
+| `npm run build` / `npm start` | Production build / serve |
+| `npm run lint` | ESLint |

@@ -1,26 +1,82 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/*
+ * BigCommerce-flavoured design tokens.
+ * Brand blue #3C64F4 on a near-black ink (#121118) with cool neutral surfaces.
+ */
+@theme {
+  --color-bc-blue-50:  #eef2ff;
+  --color-bc-blue-100: #dfe6ff;
+  --color-bc-blue-200: #c2ceff;
+  --color-bc-blue-300: #94a8ff;
+  --color-bc-blue-400: #6b86fb;
+  --color-bc-blue-500: #3c64f4;
+  --color-bc-blue-600: #2a4ddb;
+  --color-bc-blue-700: #213db0;
+  --color-bc-ink:      #121118;
+  --color-bc-slate:    #34313f;
+  --color-bc-muted:    #6c6a7a;
+  --color-bc-line:     #e3e5ec;
+  --color-bc-surface:  #f6f7f9;
+  --color-bc-teal:     #00a3a3;
+  --color-bc-amber:    #d97706;
+  --color-bc-green:    #0f8a5f;
+  --color-bc-red:      #d64545;
+
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
+html, body { height: 100%; }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--color-bc-surface);
+  color: var(--color-bc-ink);
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: "cv05", "ss01";
 }
+
+/* Numbers in tables should line up column to column. */
+.tnum { font-variant-numeric: tabular-nums; }
+
+@keyframes bc-fade-up {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-up { animation: bc-fade-up 220ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+
+@keyframes bc-scale-in {
+  from { opacity: 0; transform: scale(0.97) translateY(8px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+.animate-scale-in { animation: bc-scale-in 200ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+
+@keyframes bc-shimmer {
+  100% { transform: translateX(100%); }
+}
+.shimmer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgba(60,100,244,0.10), transparent);
+  animation: bc-shimmer 1.4s infinite;
+}
+
+::selection { background: var(--color-bc-blue-200); }
+
+*:focus-visible {
+  outline: 2px solid var(--color-bc-blue-500);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Thin, unobtrusive scrollbars inside panels and modals. */
+.scroll-slim::-webkit-scrollbar { width: 10px; height: 10px; }
+.scroll-slim::-webkit-scrollbar-thumb {
+  background: #d2d5de;
+  border: 3px solid transparent;
+  background-clip: content-box;
+  border-radius: 999px;
+}
+.scroll-slim::-webkit-scrollbar-thumb:hover { background: #b9bdc9; background-clip: content-box; }
+.scroll-slim::-webkit-scrollbar-track { background: transparent; }
