@@ -66,6 +66,12 @@ const SCHEMA = [
    )`,
   `CREATE INDEX IF NOT EXISTS actions_status ON actions(status)`,
   `CREATE INDEX IF NOT EXISTS actions_job ON actions(job_id)`,
+  // Channel message ids already accepted by /api/ingest, so a retried delivery is not re-analyzed.
+  `CREATE TABLE IF NOT EXISTS inbound_messages (
+     id TEXT PRIMARY KEY,
+     channel TEXT NOT NULL,
+     received_at TEXT NOT NULL
+   )`,
 ];
 
 let client: Client | null = null;

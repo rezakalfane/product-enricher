@@ -21,6 +21,12 @@ export const env = {
   /** Local upload directory, used whenever BLOB_READ_WRITE_TOKEN is absent. */
   uploadDir: process.env.UPLOAD_DIR ?? './data/uploads',
   blobToken: process.env.BLOB_READ_WRITE_TOKEN,
+  /** Shared secret for /api/ingest. The route is disabled while this is unset. */
+  ingestSecret: process.env.INGEST_SECRET,
+  /** Where finished channel analyses are reported, e.g. a Pipedream HTTP trigger. */
+  replyWebhookUrl: process.env.PIPEDREAM_REPLY_URL,
+  /** Base URL for review links sent back to channels. */
+  publicUrl: process.env.APP_PUBLIC_URL ?? 'http://localhost:3210',
 };
 
 // On Vercel the local fallbacks would write to a read-only, per-instance filesystem and fail

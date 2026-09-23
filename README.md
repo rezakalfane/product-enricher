@@ -39,6 +39,15 @@ Requires Node 20+. Run from the repo root — OCR reads its language data from `
 - **Human approval.** Nothing reaches BigCommerce until you press **Apply** in the review modal,
   where you can re-point the action at another product or variant, edit values, or drop fields.
 
+## Channels
+
+Sources can also come from chat apps. Send the bot a document, photo, or message on **Telegram**;
+a free Pipedream workflow relays it to `POST /api/ingest`, it's analyzed like any upload, and the
+bot replies when the actions are ready for review. Other channels (Slack, Gmail, WhatsApp) use the
+same endpoint with their own workflow. Setup: **[docs/CHANNELS.md](docs/CHANNELS.md)**.
+
+Ingest is off until `INGEST_SECRET` is set. Through a tunnel, only `/api/ingest` is reachable.
+
 ## Configuration
 
 Every key is documented in [`.env.example`](.env.example).
@@ -54,6 +63,8 @@ Every key is documented in [`.env.example`](.env.example).
 | `DATABASE_PATH` / `UPLOAD_DIR` | no | `./data/enricher.db` / `./data/uploads` |
 | `TURSO_DATABASE_URL` / `TURSO_AUTH_TOKEN` | deployed only | — |
 | `BLOB_READ_WRITE_TOKEN` | deployed only | — |
+| `INGEST_SECRET` / `PIPEDREAM_REPLY_URL` | channels only | — |
+| `APP_PUBLIC_URL` | no | `http://localhost:3210` |
 
 ## Storage
 

@@ -18,6 +18,7 @@ For setup, see the [README](../README.md).
 - [12. Frontend](#12-frontend)
 - [13. Storage and retention](#13-storage-and-retention)
 - [14. Configuration](#14-configuration)
+- [Channel ingest](#channel-ingest)
 - [Deployment](#deployment)
 - [15. Fixtures and scripts](#15-fixtures-and-scripts)
 - [16. Source map](#16-source-map)
@@ -67,14 +68,15 @@ Design principles:
   │  IntakePanel ── POST /api/analyze ──▶  returns job ids (~70ms)             │
   │       │                                                                    │
   │       └─ polls GET /api/jobs?ids=… every 1.2s per batch                    │
-  │  Workspace  ── GET /api/queue every 2s while anything is analyzing         │
+  │  Workspace  ── GET /api/queue every 2s while analyzing, 5s when idle       │
   │  ReviewModal ─ PATCH /api/queue/:id  → POST /api/queue/:id/apply           │
   └──────────────────────────────────────────────────────────────────────────┘
                                       │
                                       ▼
                          Next.js route handlers (Node.js runtime)
   ┌──────────────────────────────────────────────────────────────────────────┐
-  │  /api/analyze ── createJob() ──▶ after(): analyzeUpload / analyzeTextSource │
+  │  /api/analyze ─┐                                                           │
+  │  /api/ingest ──┴▶ queueSources() ─▶ after(): analyzeUpload / TextSource    │
   │                                         │                                  │
   │        extract.ts (PDF/DOCX/CSV text, OCR)                                 │
   │        ai.ts      (analyzeDocument / analyzeImage / rankMatches) ──▶ OpenAI │
@@ -85,7 +87,7 @@ Design principles:
   └──────────────────────────────────────────────────────────────────────────┘
                │                                         │
                ▼                                         ▼
-      db.ts — libSQL (jobs, actions)           storage.ts — uploaded images
+      db.ts — libSQL (jobs, actions, …)           storage.ts — uploaded images
       local file  |  Turso                     local disk  |  Vercel Blob (private)
 ```
 
@@ -100,9 +102,11 @@ upload ─▶ job(analyzing) ─▶ pipeline ─▶ actions(pending) ─▶ revi
                                └──▶ job(done, no actions) | job(error)
 ```
 
-1. **Intake.** `POST /api/analyze` accepts multipart `files` or a JSON `{ text }` body. For each
-   source it inserts a `jobs` row with `status = 'analyzing'` and reads the file body into memory
-   (the request body is unavailable once the response is sent).
+1. **Intake.** `POST /api/analyze` accepts multipart `files` or a JSON `{ text }` body; channel
+   messages arrive through `POST /api/ingest` ([Channel ingest](#channel-ingest)). Both call
+   `queueSources` in `src/lib/intake.ts`, which inserts a `jobs` row per source with
+   `status = 'analyzing'` and reads each file body into memory (the request body is unavailable
+   once the response is sent).
 2. **Respond immediately.** The route returns `{ jobs: [{ id, filename }] }` and schedules the work
    with Next's `after()`. Files in one request are processed **sequentially** so a multi-file drop
    doesn't fan out concurrent model and catalog calls. Separate requests run concurrently.
@@ -320,6 +324,12 @@ CREATE TABLE actions (
 
 CREATE INDEX actions_status ON actions(status);
 CREATE INDEX actions_job    ON actions(job_id);
+
+CREATE TABLE inbound_messages (
+  id          TEXT PRIMARY KEY,        -- '<channel>:<message_id>' accepted by /api/ingest
+  channel     TEXT NOT NULL,
+  received_at TEXT NOT NULL
+);
 ```
 
 `ActionPayload` (`src/lib/types.ts`):
@@ -339,8 +349,9 @@ optionally `variant_id` and `variant_label`.
 
 ### Schema diagram
 
-The two tables, plus the JSON structures stored in `actions.payload` and `actions.candidates`.
-Only `jobs` and `actions` are real tables; the other entities live inside those JSON columns.
+The tables, plus the JSON structures stored in `actions.payload` and `actions.candidates`.
+Only `jobs`, `actions` and `inbound_messages` are real tables; the other entities live inside those
+JSON columns.
 
 ![Database schema](diagrams/schema.svg)
 
@@ -369,6 +380,7 @@ All routes run on the Node.js runtime and return JSON unless noted.
 | `GET` | `/api/queue/:id` | One action, JSON columns parsed. |
 | `PATCH` | `/api/queue/:id` | Save reviewer edits: `product_id`, `variant_id`, `kind`, `status`, `fields`. |
 | `DELETE` | `/api/queue/:id` | Delete one action and its upload. |
+| `POST` | `/api/ingest` | Channel messages relayed by Pipedream (multipart, `x-ingest-secret`). See [Channel ingest](#channel-ingest). `maxDuration = 300`. |
 | `POST` | `/api/queue/:id/apply` | Write to BigCommerce. `maxDuration = 120`. 409 if already applied. |
 | `GET` | `/api/products/search?q=` | Manual product search (min 2 chars, 20 results, with variants) for re-pointing an action. |
 | `GET` | `/api/store` | Connection banner: store name, channel, product count, model. |
@@ -380,7 +392,8 @@ A single page (`src/app/page.tsx` → `Workspace`), all client components.
 
 - **`Workspace.tsx`** — shell, store banner, action queue with status filters (Needs review,
   Applied, Failed, Cancelled, All), clear-queue control. Polls `/api/queue` every 2s while any job
-  is analyzing. When a batch finishes it opens the review modal on that batch's first action and
+  is analyzing, and every 5s otherwise (paused while the tab is hidden) so sources arriving from a
+  channel appear without a reload. When a batch finishes it opens the review modal on that batch's first action and
   lets the reviewer step through with **Next** — but only if no review is already open (tracked
   through a ref, because the callback runs from a long-lived polling loop).
 - **`IntakePanel.tsx`** — dropzone (drag-and-drop or browse, multiple files) and a **Describe**
@@ -443,6 +456,60 @@ Read once in `src/lib/env.ts`. Missing required variables throw at first use wit
 | `TURSO_DATABASE_URL` / `TURSO_AUTH_TOKEN` | deployed | — | |
 | `UPLOAD_DIR` | no | `./data/uploads` | Ignored when Blob is set |
 | `BLOB_READ_WRITE_TOKEN` | deployed | — | |
+| `INGEST_SECRET` | for channels | — | Shared secret for `/api/ingest` and the reply callback; ingest returns 503 while unset |
+| `PIPEDREAM_REPLY_URL` | for channels | — | Where finished channel analyses are reported |
+| `APP_PUBLIC_URL` | no | `http://localhost:3210` | Review link included in channel replies |
+
+## Channel ingest
+
+Sources can also arrive from chat channels. The app exposes one channel-agnostic endpoint; an
+automation service (Pipedream) handles each channel's bot login, attachment download and reply.
+Setup walkthrough for Telegram: [CHANNELS.md](CHANNELS.md). Pipedream code steps:
+[`pipedream/`](pipedream/).
+
+```
+Telegram ─▶ Pipedream A ─▶ tunnel ─▶ POST /api/ingest ─▶ queueSources() ─▶ after(): pipeline
+                                                                               │
+Telegram ◀─ Pipedream B ◀──────── POST PIPEDREAM_REPLY_URL ◀── reportBack() ◀──┘
+```
+
+**`POST /api/ingest`** (`src/app/api/ingest/route.ts`):
+
+1. **Disabled by default.** Returns 503 unless `INGEST_SECRET` is set.
+2. **Auth.** `x-ingest-secret` is compared with `INGEST_SECRET` in constant time (both SHA-256
+   hashed, then `timingSafeEqual`). 401 on mismatch.
+3. **Parse** multipart: `files` (repeatable), `text`, `channel` (sanitised to `[a-z0-9_-]`, max 32),
+   `message_id`, and `reply` (opaque JSON). 400 if there is neither text nor a non-empty file.
+4. **Dedupe.** `INSERT OR IGNORE` of `<channel>:<message_id>` into `inbound_messages`; zero rows
+   affected means a retried delivery, answered `200 { duplicate: true }` without re-analysis. If
+   queueing then fails, the row is deleted so the relay can retry.
+5. **Queue** through `queueSources`, with job names prefixed by the channel
+   (`telegram · spec-sheet.pdf`, `telegram · message`). Text sent on its own is always analyzed; a
+   caption on attachments is analyzed as a separate text source only when it is 40+ characters,
+   since short captions ("see attached") just label the file. The pipeline itself sees the
+   original filename, because filename terms feed matching.
+6. **Report back.** After the batch (in the same `after()`), `reportBack` reads each job's status,
+   note and action count, builds a plain-text summary with a review link (`APP_PUBLIC_URL`), and
+   POSTs `{ reply, summary, actionCount, reviewUrl, jobs }` to `PIPEDREAM_REPLY_URL` with the
+   `x-ingest-secret` header (10s timeout; failures are logged, not retried). The destination comes
+   only from configuration, never from the request, so ingest can't be used to make the server
+   call arbitrary URLs.
+
+**Tunnel restriction** (`src/proxy.ts`, Next 16's replacement for middleware). The app has no
+login, and a tunnel (ngrok or Cloudflare) would expose all of it. Tunnels must forward the public
+`Host` header, which both do by default; ngrok's `--host-header=rewrite` would defeat this check.
+Requests whose `Host` is not `localhost`, `127.0.0.1` or `[::1]` may only reach `/api/ingest`;
+everything else gets 404. Skipped when
+`VERCEL` is set, where Deployment Protection governs access instead.
+
+**Relay responsibilities** (Pipedream workflow A): drop update types with nothing to analyze,
+allow-list senders (the bot is discoverable by username), download attachments with the bot
+token, pick the largest photo size, and set `message_id = <chat_id>:<message_id>` and
+`reply = { chat_id, message_id }`. Workflow B checks the secret header and replies to the original
+message.
+
+Nothing about a channel changes the approval model: channel sources produce `pending` actions like
+any other, and only **Apply** in the app writes to BigCommerce.
 
 ## Deployment
 
@@ -464,6 +531,9 @@ The code is ready for Vercel + Turso + Vercel Blob:
 
 Before a deployment is reachable:
 
+- **Channel ingest.** On Vercel, `/api/ingest` is reachable at the deployment URL, and the tunnel
+  restriction does not apply. Point workflow A at the deployment and keep `INGEST_SECRET` set;
+  Deployment Protection must allow the route (e.g. a protection bypass for automation).
 - **Authentication.** The app has none. Anyone who can reach it can apply changes to the store.
   Put Vercel Deployment Protection (SSO) or an auth layer in front of it.
 - **Batch size.** A large multi-file drop is processed sequentially inside one `after()` and could
@@ -493,7 +563,8 @@ src/
     page.tsx                     renders <Workspace />
     layout.tsx, globals.css
     api/
-      analyze/route.ts           intake → jobs → after()
+      analyze/route.ts           dropzone intake → queueSources()
+      ingest/route.ts            channel intake: secret, dedupe, reply callback
       jobs/route.ts              batch progress polling
       queue/route.ts             list / bulk status / clear
       queue/[id]/route.ts        get / edit / delete one action
@@ -503,6 +574,7 @@ src/
       uploads/[name]/route.ts    stream stored images
   lib/
     env.ts          configuration + Vercel env guard
+    intake.ts       queueSources(): jobs + after() scheduling, shared by both intakes
     db.ts           libSQL client, schema, query helpers, row types
     storage.ts      uploads: local disk or private Vercel Blob
     retention.ts    upload release points and orphan sweep
@@ -517,14 +589,18 @@ src/
     client-types.ts API response shapes and labels for the UI
   components/
     Workspace.tsx, IntakePanel.tsx, ReviewModal.tsx, ui.tsx, icons.tsx
+  proxy.ts                       tunnel restriction: non-local hosts reach /api/ingest only
 ocr/eng.traineddata              bundled Tesseract language data
+docs/pipedream/                  Pipedream code steps for the Telegram workflows
 fixtures/                        sample documents, images, catalog snapshot
 scripts/                         fixture generation (Node + Python)
 ```
 
 ## 17. Known limitations
 
-- **No authentication or authorization** (see [Deployment](#deployment)).
+- **No authentication or authorization** (see [Deployment](#deployment)). Channel senders are
+  only filtered by the relay's allow-list.
+- **Channel replies are best-effort.** A failed reply callback is logged, not retried.
 - **No rate limiting or retry/backoff** on BigCommerce or OpenAI calls; a 429 fails the job or
   apply, and the user retries.
 - **In-memory caches are per instance.** The channel product-ID cache (5 min) isn't shared across

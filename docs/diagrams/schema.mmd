@@ -8,6 +8,12 @@ erDiagram
     ACTION_PAYLOAD ||--o{ PROPOSED_FIELD : "fields"
     ACTION_PAYLOAD |o--o| PAYLOAD_IMAGE : "image"
 
+    INBOUND_MESSAGES {
+        TEXT id PK "channel:message_id accepted by /api/ingest"
+        TEXT channel "e.g. telegram"
+        TEXT received_at "ISO 8601"
+    }
+
     JOBS {
         TEXT id PK "UUID"
         TEXT source_type "file | text"

@@ -117,6 +117,15 @@ export function Workspace() {
     return () => clearInterval(t);
   }, [analyzing, load]);
 
+  // Sources can also arrive from a channel (/api/ingest), so check in slowly when idle too.
+  useEffect(() => {
+    if (analyzing > 0) return;
+    const t = setInterval(() => {
+      if (!document.hidden) void load();
+    }, 5000);
+    return () => clearInterval(t);
+  }, [analyzing, load]);
+
   const queueIndex = openId ? reviewQueue.indexOf(openId) : -1;
   const hasNext = queueIndex >= 0 && queueIndex < reviewQueue.length - 1;
 
