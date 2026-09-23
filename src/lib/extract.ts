@@ -80,7 +80,13 @@ export function termsFromFilename(filename: string): string[] {
       base
         .split(/[^a-z0-9]+/i)
         .map((t) => t.trim())
-        .filter((t) => t.length >= 3 && !/^(img|dsc|photo|image|final|copy|v\d+|\d{1,2})$/i.test(t)),
+        .filter(
+          (t) =>
+            t.length >= 3 &&
+            !/^(img|dsc|photo|image|final|copy|telegram|whatsapp|v\d+|\d{1,2})$/i.test(t) &&
+            // Opaque ids from chat apps (telegram-photo-AQADjhhrG1TUoVF9.jpg) match nothing.
+            !/^(?=.*\d)(?=.*[a-z])(?=.*[A-Z])[A-Za-z0-9]{10,}$/.test(t),
+        ),
     ),
   ];
 }

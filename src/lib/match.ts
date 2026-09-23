@@ -57,7 +57,12 @@ export async function findMatches(args: {
     }
   }
 
-  const terms = [...new Set([...args.searchTerms, args.name, args.brand ?? ''].filter(Boolean))];
+  // searchProducts runs at most 6 queries. Specific phrases go first so their hits lead the
+  // shortlist, but the brand must make the cut: phrases fail on a single misread word
+  // ("OMG" for "0MG"), while the brand alone almost always finds the product family.
+  const terms = [
+    ...new Set([...args.searchTerms.slice(0, 4), args.brand ?? '', args.name].filter(Boolean)),
+  ];
   const pool = await searchProducts(terms);
   if (pool.length === 0) return { candidates: [], isNew: true };
 
