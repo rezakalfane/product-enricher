@@ -1,0 +1,78 @@
+%% Product Enricher — database schema (src/lib/db.ts) and the JSON stored in actions.payload / actions.candidates.
+%% Render with: npm run docs:diagrams
+erDiagram
+    JOBS ||--o{ ACTIONS : "queues (ON DELETE CASCADE)"
+    ACTIONS ||--|| ACTION_PAYLOAD : "payload (JSON)"
+    ACTIONS ||--o{ MATCH_CANDIDATE : "candidates (JSON array)"
+    ACTION_PAYLOAD ||--|| EXTRACTED_PRODUCT : "extracted"
+    ACTION_PAYLOAD ||--o{ PROPOSED_FIELD : "fields"
+    ACTION_PAYLOAD |o--o| PAYLOAD_IMAGE : "image"
+
+    JOBS {
+        TEXT id PK "UUID"
+        TEXT source_type "file | text"
+        TEXT filename "original name or Pasted text"
+        TEXT mime
+        TEXT status "analyzing | done | error"
+        TEXT note "outcome summary or error"
+        TEXT created_at "ISO 8601"
+    }
+
+    ACTIONS {
+        TEXT id PK "UUID"
+        TEXT job_id FK "jobs.id, indexed"
+        TEXT kind "create_product | update_product | add_product_image | set_variant_image"
+        TEXT status "pending | applied | failed | cancelled, indexed"
+        TEXT title
+        TEXT summary "replaced by apply result"
+        REAL confidence "top candidate score 0-1"
+        INTEGER product_id "chosen BC product, null for create"
+        INTEGER variant_id "chosen BC variant"
+        TEXT payload "ActionPayload JSON"
+        TEXT candidates "MatchCandidate[] JSON"
+        TEXT error
+        TEXT created_at "ISO 8601"
+        TEXT updated_at "ISO 8601"
+    }
+
+    ACTION_PAYLOAD {
+        string[] notes "analyzer caveats"
+        string sourceImage_filename "photographed document, photo deleted"
+    }
+
+    EXTRACTED_PRODUCT {
+        string name
+        string sku "nullable"
+        string brand "nullable"
+        number price "nullable"
+        string description "nullable"
+    }
+
+    PROPOSED_FIELD {
+        string name "BC field key or custom field name"
+        string label
+        string value
+        boolean custom "hint; fields.ts has final say"
+        string evidence "source sentence"
+        boolean disabled "excluded from write"
+    }
+
+    PAYLOAD_IMAGE {
+        string path "storage key, deleted on resolve"
+        string filename
+        string ocrText "nullable"
+        string caption "nullable"
+    }
+
+    MATCH_CANDIDATE {
+        number product_id
+        string name
+        string sku
+        number price
+        string image "thumbnail URL"
+        string url
+        number score "0-1"
+        string reason
+        number variant_id "optional"
+        string variant_label "optional"
+    }

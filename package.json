@@ -10,7 +10,8 @@
     "fixtures:images": "node --env-file=.env.local scripts/fetch-images.mjs",
     "fixtures:strip": "node --env-file=.env.local scripts/strip-images.mjs",
     "fixtures:docs": "./.venv-fixtures/bin/python scripts/make_docs.py",
-    "fixtures:note": "./.venv-fixtures/bin/python scripts/make_handwritten.py"
+    "fixtures:note": "./.venv-fixtures/bin/python scripts/make_handwritten.py",
+    "docs:diagrams": "npx -y @mermaid-js/mermaid-cli@11 -i docs/diagrams/schema.mmd -o docs/diagrams/schema.svg -b white"
   },
   "dependencies": {
     "@ai-sdk/openai": "^4.0.72",

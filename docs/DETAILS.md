@@ -337,6 +337,21 @@ CREATE INDEX actions_job    ON actions(job_id);
 `MatchCandidate`: `product_id`, `name`, `sku`, `price`, `image`, `url`, `score`, `reason`, and
 optionally `variant_id` and `variant_label`.
 
+### Schema diagram
+
+The two tables, plus the JSON structures stored in `actions.payload` and `actions.candidates`.
+Only `jobs` and `actions` are real tables; the other entities live inside those JSON columns.
+
+![Database schema](diagrams/schema.svg)
+
+Source: [`diagrams/schema.mmd`](diagrams/schema.mmd). After changing the schema in `src/lib/db.ts`
+or the payload types in `src/lib/types.ts`, update the source and re-render with
+[Mermaid CLI](https://github.com/mermaid-js/mermaid-cli):
+
+```bash
+npm run docs:diagrams
+```
+
 The `db.ts` helpers (`all`, `one`, `run`, `batch`) wrap one process-wide libSQL client. A failed
 initial connection is not cached, so the next request retries.
 

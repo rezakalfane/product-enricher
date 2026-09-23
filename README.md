@@ -111,3 +111,4 @@ re-upload one and it should match straight back to its product.
 | `npm run dev` | Dev server on port 3210 |
 | `npm run build` / `npm start` | Production build / serve |
 | `npm run lint` | ESLint |
+| `npm run docs:diagrams` | Re-render `docs/diagrams/schema.svg` with Mermaid CLI |
