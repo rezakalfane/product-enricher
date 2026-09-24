@@ -9,13 +9,16 @@ export type QueuedJob = { id: string; filename: string };
  * Shared by the dropzone (/api/analyze) and channel ingest (/api/ingest).
  *
  * Sources in one call run sequentially, so a multi-file drop doesn't fan out concurrent model
- * and catalog calls. `onDone` runs after the whole batch, inside the same `after()`.
+ * and catalog calls. The hooks run inside the same `after()`: `onStart` before the first source,
+ * `onJobDone` as each source finishes, and `onDone` after the whole batch.
  */
 export async function queueSources({
   files = [],
   text,
   textName = 'Pasted text',
   label = (name) => name,
+  onStart,
+  onJobDone,
   onDone,
 }: {
   files?: File[];
@@ -24,17 +27,12 @@ export async function queueSources({
   textName?: string;
   /** Display name for a source in the queue, e.g. to prefix the channel it came from. */
   label?: (name: string) => string;
+  onStart?: (jobs: QueuedJob[]) => Promise<void>;
+  onJobDone?: (job: QueuedJob) => Promise<void>;
   onDone?: (jobs: QueuedJob[]) => Promise<void>;
 }): Promise<QueuedJob[]> {
   const jobs: QueuedJob[] = [];
-  const tasks: (() => Promise<void>)[] = [];
-
-  if (text?.trim()) {
-    const filename = label(textName);
-    const id = await createJob({ sourceType: 'text', filename, mime: 'text/plain' });
-    jobs.push({ id, filename });
-    tasks.push(() => analyzeTextSource(id, text, filename));
-  }
+  const tasks: { job: QueuedJob; run: () => Promise<void> }[] = [];
 
   for (const file of files) {
     const mime = file.type || 'application/octet-stream';
@@ -42,14 +40,28 @@ export async function queueSources({
     const id = await createJob({ sourceType: 'file', filename, mime });
     // Read the body now — it is not available once the response has been sent.
     const buf = Buffer.from(await file.arrayBuffer());
-    jobs.push({ id, filename });
+    const job = { id, filename };
+    jobs.push(job);
     // The pipeline sees the original name: filename terms feed product matching.
-    tasks.push(() => analyzeUpload(id, buf, file.name, mime));
+    tasks.push({ job, run: () => analyzeUpload(id, buf, file.name, mime) });
+  }
+
+  // After the attachments, so a caption is reported after the file it describes.
+  if (text?.trim()) {
+    const filename = label(textName);
+    const id = await createJob({ sourceType: 'text', filename, mime: 'text/plain' });
+    const job = { id, filename };
+    jobs.push(job);
+    tasks.push({ job, run: () => analyzeTextSource(id, text, filename) });
   }
 
   if (tasks.length > 0) {
     after(async () => {
-      for (const task of tasks) await task();
+      await onStart?.(jobs);
+      for (const task of tasks) {
+        await task.run();
+        await onJobDone?.(task.job);
+      }
       await sweepOrphanedUploads();
       await onDone?.(jobs);
     });

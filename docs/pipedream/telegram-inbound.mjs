@@ -26,7 +26,8 @@ export default defineComponent({
     // The bot can be found by anyone who knows its username; only forward known senders.
     if (!allowed.includes(sender)) return $.flow.exit(`Sender @${sender || 'unknown'} is not allowed.`);
 
-    const token = this.telegram_bot_api.$auth.token;
+    const token = this.telegram_bot_api?.$auth?.token;
+    if (!token) throw new Error('No Telegram Bot account selected on this step — pick one under Configure, then deploy.');
 
     async function download(fileId) {
       const meta = await fetch(`https://api.telegram.org/bot${token}/getFile?file_id=${fileId}`).then((r) => r.json());

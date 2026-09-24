@@ -13,7 +13,8 @@ export default defineComponent({
     telegram_bot_api: { type: 'app', app: 'telegram_bot_api' },
   },
   async run({ steps, $ }) {
-    const { headers, body } = steps.trigger.event;
+    // Testing in build mode without a selected sample event gives an empty event.
+    const { headers = {}, body = {} } = steps.trigger.event ?? {};
     // Only the app knows the secret — reject anything else that finds this URL.
     if (headers['x-ingest-secret'] !== process.env.INGEST_SECRET) {
       await $.respond({ status: 401, body: 'Unauthorized' });
@@ -24,7 +25,8 @@ export default defineComponent({
     const { reply, summary } = body;
     if (!reply?.chat_id) return $.flow.exit('No chat to reply to.');
 
-    const token = this.telegram_bot_api.$auth.token;
+    const token = this.telegram_bot_api?.$auth?.token;
+    if (!token) throw new Error('No Telegram Bot account selected on this step — pick one under Configure, then deploy.');
     const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

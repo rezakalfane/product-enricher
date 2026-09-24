@@ -470,7 +470,7 @@ Setup walkthrough for Telegram: [CHANNELS.md](CHANNELS.md). Pipedream code steps
 ```
 Telegram ─▶ Pipedream A ─▶ tunnel ─▶ POST /api/ingest ─▶ queueSources() ─▶ after(): pipeline
                                                                                │
-Telegram ◀─ Pipedream B ◀──────── POST PIPEDREAM_REPLY_URL ◀── reportBack() ◀──┘
+Telegram ◀─ Pipedream B ◀──────── POST PIPEDREAM_REPLY_URL ◀── sendReply() ◀───┘
 ```
 
 **`POST /api/ingest`** (`src/app/api/ingest/route.ts`):
@@ -488,12 +488,21 @@ Telegram ◀─ Pipedream B ◀──────── POST PIPEDREAM_REPLY_URL
    caption on attachments is analyzed as a separate text source only when it is 40+ characters,
    since short captions ("see attached") just label the file. The pipeline itself sees the
    original filename, because filename terms feed matching.
-6. **Report back.** After the batch (in the same `after()`), `reportBack` reads each job's status,
-   note and action count, builds a plain-text summary with a review link (`APP_PUBLIC_URL`), and
-   POSTs `{ reply, summary, actionCount, reviewUrl, jobs }` to `PIPEDREAM_REPLY_URL` with the
-   `x-ingest-secret` header (10s timeout; failures are logged, not retried). The destination comes
-   only from configuration, never from the request, so ingest can't be used to make the server
-   call arbitrary URLs.
+6. **Report progress.** `queueSources` hooks drive three reply events, each POSTed by `sendReply`
+   to `PIPEDREAM_REPLY_URL` as `{ event, reply, summary, reviewUrl, … }` with the
+   `x-ingest-secret` header:
+   - `received` (`onStart`) — what arrived, by type (PDF, Word document, spreadsheet, image,
+     photo, message, caption).
+   - `processed` (`onJobDone`, per source) — action count with a breakdown by kind, the top three
+     actions with confidence, and a review link (`APP_PUBLIC_URL`); or the "nothing to review"
+     reason; or the error.
+   - `done` (`onDone`) — a total, only when a message had two or more sources.
+
+   `summary` is always the finished message text, so the relay posts it verbatim. Attachments are
+   analyzed before a caption, so replies follow the order things were sent. Opaque chat-app photo
+   names (`telegram-photo-<id>.jpg`) are shown as "Photo". Each call has a 10s timeout; failures
+   are logged, not retried. The destination comes only from configuration, never from the
+   request, so ingest can't be used to make the server call arbitrary URLs.
 
 **Tunnel restriction** (`src/proxy.ts`, Next 16's replacement for middleware). The app has no
 login, and a tunnel (ngrok or Cloudflare) would expose all of it. Tunnels must forward the public

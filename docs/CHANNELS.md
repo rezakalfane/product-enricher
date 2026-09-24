@@ -1,7 +1,7 @@
 # Channels — send sources from chat apps
 
 Send a document, photo, or text to a chat channel and Product Enricher analyzes it exactly as if
-it had been dropped into the app. The bot replies in the chat when the analysis is done. Nothing
+it had been dropped into the app. The bot confirms receipt and reports each result in the chat. Nothing
 is written to BigCommerce until someone presses **Apply** in the review modal.
 
 The app exposes one channel-agnostic endpoint, `POST /api/ingest`. An automation service
@@ -70,6 +70,11 @@ Either way, only `/api/ingest` is reachable through the tunnel — every other p
 3. Workflow settings → environment variable `INGEST_SECRET` (same value as the app).
 4. Deploy. Copy the trigger URL into the app's `PIPEDREAM_REPLY_URL` and restart the dev server.
 
+> **Two easy misses.** Select the Telegram Bot account on the *code step* too, not only on the
+> trigger — without it every reply fails with `Cannot read properties of undefined (reading
+> 'token')`. And a workflow only handles real events once it is **deployed**; in build mode,
+> **Test** replays a sample event instead.
+
 ### 5. Workflow A — inbound
 
 1. New workflow → trigger **Telegram Bot → New Updates (Instant)**, using your bot account.
@@ -89,14 +94,31 @@ Open a chat with your bot and send:
 - a packshot from `fixtures/images/` (as a photo)
 - a text message describing a product
 
-Each appears in the app's action queue as `telegram · <name>` within a few seconds. When analysis
-finishes, the bot replies to your message, for example:
+Each appears in the app's action queue as `telegram · <name>` within a few seconds. The bot
+replies to your message as it goes:
 
 ```
-4 action(s) ready for review.
-✅ q4-2026-trade-price-list.pdf — 4 action(s) queued
+📥 PDF received: vaporline-specification-sheet.pdf
+Analyzing now…
+```
+
+```
+✅ vaporline-specification-sheet.pdf processed: 4 actions (4 updates)
+• Update product: Tecc EN Replacement Coils 2pack (100%)
+• Update product: Juice Head Freeze Blueberry Lemon 0mg 100ml Shortfill (100%)
+• Update product: Zeus Juice Zodiac 0mg 100ml Shortfill (100%)
+• …and 1 more
 Review: http://localhost:3210
 ```
+
+| When | Reply |
+| --- | --- |
+| Message accepted | `📥 PDF / Word document / Spreadsheet / Image received: <name>`, `📥 Photo received`, `📥 Message received`, or `📥 Caption received` |
+| Each source finishes | `✅ <name> processed: N actions (breakdown)` with the top 3 and a review link; `ℹ️ … nothing to review` with the reason; or `⚠️ … could not be processed` with the error |
+| A message had several sources (e.g. file + long caption) | `🏁 All done: N sources processed.` with the total |
+
+Each reply is one Pipedream invocation, so a single file uses two (received + processed). Mind the
+daily credit allowance on Pipedream's free plan.
 
 ## Behaviour
 
@@ -135,15 +157,25 @@ For adding other channels (Slack, Gmail, WhatsApp via a Meta app). Full details 
 Responses: `200 { jobs }`, `200 { duplicate: true }`, `400` nothing to analyze, `401` bad secret,
 `503` ingest disabled.
 
-When the message's sources finish, the app POSTs JSON to `PIPEDREAM_REPLY_URL` with header
-`x-ingest-secret`:
+As the message is handled, the app POSTs JSON to `PIPEDREAM_REPLY_URL` with header
+`x-ingest-secret`. `summary` is always the ready-to-send message text, so a relay can post it as-is
+whatever the event:
+
+| `event` | When | Extra fields |
+| --- | --- | --- |
+| `received` | Analysis is starting | — |
+| `processed` | One source finished | `job` |
+| `done` | All sources finished (only sent when there were 2+) | `jobs` |
 
 ```json
 {
+  "event": "processed",
   "reply": { "chat_id": 123, "message_id": 45 },
-  "summary": "1 action(s) ready for review.\n✅ message — 1 action(s) queued\nReview: http://localhost:3210",
-  "actionCount": 1,
+  "summary": "✅ Photo processed: 1 action (1 variant image)\n• Set variant image: … (98%)\nReview: http://localhost:3210",
   "reviewUrl": "http://localhost:3210",
-  "jobs": [{ "id": "…", "filename": "telegram · message", "status": "done", "note": "…", "actionCount": 1 }]
+  "job": {
+    "id": "…", "name": "Photo", "status": "done", "note": "Matched \"…\".",
+    "actions": [{ "kind": "set_variant_image", "title": "…", "confidence": 0.98 }]
+  }
 }
 ```
