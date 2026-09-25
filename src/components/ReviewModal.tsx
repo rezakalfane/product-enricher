@@ -701,11 +701,6 @@ export function ReviewModal({
               Close
             </Button>
           )}
-          {onNext && (
-            <Button variant={result?.ok || isApplied ? 'primary' : 'secondary'} onClick={onNext}>
-              Next
-            </Button>
-          )}
         </footer>
       </div>
     </div>

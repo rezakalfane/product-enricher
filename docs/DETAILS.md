@@ -417,7 +417,7 @@ A single page (`src/app/page.tsx` → `Workspace`), all client components.
   is analyzing, and every 5s otherwise (paused while the tab is hidden) so sources arriving from a
   channel appear without a reload. When a batch finishes it shows a toast (`Toasts.tsx`, bottom
   right, 10s, kept while hovered) summarising what was found; its **Review** link opens the modal on
-  that batch's first action and lets the reviewer step through with **Next**.
+  that batch's first action; the header's Previous / Next arrows (or ← →) step through it.
 - **`IntakePanel.tsx`** — dropzone (drag-and-drop or browse, multiple files) and a **Describe**
   tab for pasted text. The panel locks only for the upload request itself. Each batch then tracks
   itself in the background (polling `/api/jobs` every 1.2s, up to ~8 minutes), and a status line
