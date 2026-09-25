@@ -3,7 +3,7 @@
 import { clsx } from 'clsx';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ActionView } from '@/lib/client-types';
-import { KIND_LABEL } from '@/lib/client-types';
+import { KIND_LABEL, productAdminUrl } from '@/lib/client-types';
 import type { ActionKind } from '@/lib/db';
 import { enabledFields, resolvesToCustomField } from '@/lib/fields';
 import type { MatchCandidate, ProposedField } from '@/lib/types';
@@ -21,12 +21,15 @@ type SearchHit = {
 
 export function ReviewModal({
   action,
+  storeHash,
   onClose,
   onChanged,
   position,
   onNext,
 }: {
   action: ActionView;
+  /** Enables the Control Panel link on product cards. */
+  storeHash?: string;
   onClose: () => void;
   onChanged: () => void;
   /** Set when reviewing a batch from one analysis, e.g. 2 of 4. */
@@ -405,6 +408,7 @@ export function ReviewModal({
                     <CandidateCard
                       key={c.product_id}
                       candidate={c}
+                      adminUrl={storeHash ? productAdminUrl(storeHash, c.product_id) : undefined}
                       selected={kind !== 'create_product' && productId === c.product_id}
                       disabled={isApplied}
                       onSelect={() => {
@@ -459,6 +463,7 @@ export function ReviewModal({
                       selected={kind !== 'create_product' && productId === h.product_id}
                       disabled={isApplied}
                       hideScore
+                      adminUrl={storeHash ? productAdminUrl(storeHash, h.product_id) : undefined}
                       onSelect={() => {
                         setProductId(h.product_id);
                         setVariantId(null);
@@ -587,21 +592,24 @@ function CandidateCard({
   selected,
   disabled,
   hideScore,
+  adminUrl,
   onSelect,
 }: {
   candidate: MatchCandidate;
   selected: boolean;
   disabled?: boolean;
   hideScore?: boolean;
+  adminUrl?: string;
   onSelect: () => void;
 }) {
   return (
-    <li>
+    <li className="relative">
       <button
         onClick={onSelect}
         disabled={disabled}
         className={clsx(
           'flex w-full items-start gap-3 rounded-xl border p-2.5 text-left transition disabled:opacity-60',
+          adminUrl && 'pr-9',
           selected
             ? 'border-bc-blue-500 bg-white ring-1 ring-bc-blue-400'
             : 'border-bc-line bg-white hover:border-bc-blue-300',
@@ -642,6 +650,19 @@ function CandidateCard({
         </div>
         {selected && <CheckIcon className="mt-1 size-4 shrink-0 text-bc-blue-500" />}
       </button>
+      {/* A sibling of the card button, not a child: links can't nest inside buttons. */}
+      {adminUrl && (
+        <a
+          href={adminUrl}
+          target="_blank"
+          rel="noreferrer"
+          title="Open in BigCommerce"
+          aria-label={`Open ${candidate.name} in BigCommerce`}
+          className="absolute bottom-2 right-2 grid size-6 place-items-center rounded-md border border-bc-line bg-white text-bc-slate transition hover:border-bc-blue-300 hover:text-bc-blue-500"
+        >
+          <LinkIcon className="size-3.5" />
+        </a>
+      )}
     </li>
   );
 }

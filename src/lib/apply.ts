@@ -1,4 +1,5 @@
 import { bc, type BCProduct } from './bigcommerce';
+import { productAdminUrl } from './client-types';
 import { now, run, type QueueAction } from './db';
 import { env } from './env';
 import { enabledFields, NUMERIC_FIELDS, resolvesToCustomField } from './fields';
@@ -119,7 +120,7 @@ export async function applyAction(action: QueueAction): Promise<ApplyResult> {
 }
 
 function adminUrl(productId: number) {
-  return `https://store-${env.storeHash}.mybigcommerce.com/manage/products/edit/${productId}`;
+  return productAdminUrl(env.storeHash, productId);
 }
 
 export async function markApplied(id: string, message: string) {

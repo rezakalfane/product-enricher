@@ -252,6 +252,7 @@ export function Workspace() {
         <ReviewModal
           key={openAction.id}
           action={openAction}
+          storeHash={store?.storeHash}
           onClose={closeModal}
           onChanged={load}
           position={

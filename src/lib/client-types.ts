@@ -33,6 +33,11 @@ export type StoreInfo = {
   error?: string;
 };
 
+/** Control Panel edit page for a product. */
+export function productAdminUrl(storeHash: string, productId: number) {
+  return `https://store-${storeHash}.mybigcommerce.com/manage/products/edit/${productId}`;
+}
+
 export const KIND_LABEL: Record<ActionKind, string> = {
   create_product: 'Create product',
   update_product: 'Update product',
