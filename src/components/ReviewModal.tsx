@@ -449,7 +449,6 @@ export function ReviewModal({
                             {v.options.map((o) => o.name).join(' / ')}
                             {v.sku && ` · ${v.sku}`}
                             {v.price != null && ` · Price ${v.price}`}
-                            {v.costPrice != null && ` · Cost ${v.costPrice}`}
                             {v.retailPrice != null && ` · RRP ${v.retailPrice}`}
                           </p>
                         </div>

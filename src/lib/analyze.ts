@@ -3,7 +3,7 @@ import { analyzeDocument, analyzeImage } from './ai';
 import { all, batch, now, run } from './db';
 import { classify, extractText, ocrImage, termsFromFilename } from './extract';
 import { findMatches, pruneExistingVariants, pruneUnchangedFields } from './match';
-import { priceFields, sellingPrice, withoutPriceFields } from './prices';
+import { catalogPrice, priceFields, withoutPriceFields } from './prices';
 import { deleteUpload, putUpload } from './storage';
 import type { ActionPayload, MatchCandidate, ProposedField, ProposedVariant } from './types';
 
@@ -101,7 +101,7 @@ export async function analyzeTextSource(
     for (const p of doc.products) {
       const described =
         `Name: ${p.name}\nSKU: ${p.sku ?? '—'}\nBrand: ${p.brand ?? '—'}\n` +
-        `Cost: ${p.prices.cost?.value ?? '—'}\nRRP: ${p.prices.retail?.value ?? '—'}\n` +
+        `Price: ${catalogPrice(p.prices) ?? '—'}\nRRP: ${p.prices.retail?.value ?? '—'}\n` +
         `Variant: ${p.variantHint ?? '—'}\n` +
         `Details: ${p.fields.map((f) => `${f.label}=${f.value}`).join('; ')}` +
         (p.variants.length > 0
@@ -126,8 +126,7 @@ export async function analyzeTextSource(
       const fields: ProposedField[] = [...prices.fields, ...withoutPriceFields(p.fields)];
       const proposedVariants: ProposedVariant[] = p.variants.map((v) => ({
         sku: v.sku,
-        price: sellingPrice(v.prices),
-        costPrice: v.prices.cost?.value ?? null,
+        price: catalogPrice(v.prices),
         retailPrice: v.prices.retail?.value ?? null,
         options: v.options,
         evidence: v.evidence,
@@ -137,7 +136,7 @@ export async function analyzeTextSource(
           name: p.name,
           sku: p.sku,
           brand: p.brand,
-          price: sellingPrice(p.prices),
+          price: catalogPrice(p.prices),
           description: p.description,
         },
         fields: creating ? fields : await pruneUnchangedFields(top.product_id, fields),

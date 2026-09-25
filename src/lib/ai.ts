@@ -37,8 +37,8 @@ const pricesSchema = z.object({
   cost: priceSchema
     .nullable()
     .describe(
-      'What the merchant pays the supplier: trade price, unit cost, wholesale, net, buy price, ' +
-        'cost price, dealer price.',
+      'The trade price: trade price, unit cost, wholesale, net, buy price, cost price, dealer ' +
+        'price.',
     ),
   retail: priceSchema
     .nullable()

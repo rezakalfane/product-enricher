@@ -214,7 +214,7 @@ Output schema:
 
 **Prices** are classified by meaning, not label, because sources use every wording: "Trade GBP",
 "Unit Cost", `trade_price_gbp`, "RRP", a bare "GBP 12.99". In a trade document an unqualified price
-counts as cost. `src/lib/prices.ts` maps the result (see §8).
+counts as trade. `src/lib/prices.ts` maps the result (see §8).
 | `products[].fields[]` | `name` (BC field key or custom name), `label`, `value`, `custom`, `evidence` |
 | `notes[]` | Caveats for the reviewer |
 
@@ -273,11 +273,10 @@ the set in memory for 5 minutes.
 - **Numeric fields** (`price`, `cost_price`, `retail_price`, `weight`, `width`, `height`, `depth`)
   are stripped to digits and `.` before writing; a value that doesn't parse is skipped.
 - **Prices** never come from the model's free-form fields (any it reports there are dropped).
-  `priceFields` maps the classified prices: cost → `cost_price`; RRP → `retail_price` *and* the
-  selling `price`; an unlabelled price → `price`, with a note asking the reviewer to check it isn't
-  a trade cost. On an existing product the selling `price` is proposed **switched off**, so an RRP
-  doesn't replace the store's own pricing unless the reviewer turns it on. A new product with no
-  selling price gets an empty `price` field to fill in. Variants carry the same three prices.
+  The channel is a trade (distribution) channel, so catalog prices *are* trade prices.
+  `priceFields` maps a trade/unit cost — or an unlabelled price — to `price`, and an RRP to
+  `retail_price`. `cost_price` is never written. A new product with no trade price gets an empty
+  `price` field to fill in. Variants carry `price` and `retail_price` the same way.
 - **Disabled fields** stay in the payload so the reviewer can switch them back on, but
   `enabledFields` excludes them from the write.
 

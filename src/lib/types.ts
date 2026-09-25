@@ -17,9 +17,8 @@ export type ProposedField = {
 /** A flavour/strength/size of a grouped product, created as a BigCommerce variant. */
 export type ProposedVariant = {
   sku: string | null;
-  /** Selling price; null inherits the product's. */
+  /** Trade price; null inherits the product's. */
   price: number | null;
-  costPrice: number | null;
   retailPrice: number | null;
   /** Option name → value, e.g. Flavour = Blue Razz. */
   options: { name: string; value: string }[];

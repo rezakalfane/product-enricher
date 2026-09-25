@@ -54,7 +54,6 @@ function variantSku(base: string, v: ProposedVariant): string {
 function variantPrices(v: ProposedVariant) {
   return {
     ...(v.price != null ? { price: v.price } : {}),
-    ...(v.costPrice != null ? { cost_price: v.costPrice } : {}),
     ...(v.retailPrice != null ? { retail_price: v.retailPrice } : {}),
   };
 }
