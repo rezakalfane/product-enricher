@@ -179,7 +179,8 @@ export function ReviewModal({
         aria-label={`Review: ${action.title}`}
         tabIndex={-1}
         className={clsx(
-          'flex max-h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-t-2xl bg-white shadow-2xl outline-none sm:rounded-2xl',
+          // Fixed size so stepping between items doesn't resize the window; the body scrolls instead.
+          'flex h-[92dvh] w-full max-w-5xl flex-col overflow-hidden rounded-t-2xl bg-white shadow-2xl outline-none sm:h-[min(88dvh,860px)] sm:rounded-2xl',
           animateIn && 'animate-scale-in',
         )}
       >
@@ -225,7 +226,7 @@ export function ReviewModal({
         </header>
 
         {/* Body */}
-        <div className="scroll-slim grid flex-1 grid-cols-1 gap-0 overflow-y-auto md:grid-cols-[minmax(0,1fr)_340px]">
+        <div className="scroll-slim grid min-h-0 flex-1 grid-cols-1 gap-0 overflow-y-auto md:grid-cols-[minmax(0,1fr)_340px]">
           {/* Left: what we found */}
           <div className="flex flex-col gap-6 border-bc-line p-6 md:border-r">
             {transcribedFrom && (
