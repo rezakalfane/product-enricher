@@ -36,6 +36,7 @@ export async function PATCH(req: Request, { params }: Ctx) {
     kind?: QueueAction['kind'];
     status?: QueueAction['status'];
     fields?: ActionPayload['fields'];
+    variants?: ActionPayload['variants'];
   };
 
   const row = await one<QueueAction>(SELECT_ONE, [id]);
@@ -43,6 +44,7 @@ export async function PATCH(req: Request, { params }: Ctx) {
 
   const payload = JSON.parse(row.payload) as ActionPayload;
   if (body.fields) payload.fields = body.fields;
+  if (body.variants) payload.variants = body.variants;
 
   await run(
     `UPDATE actions

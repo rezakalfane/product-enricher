@@ -6,7 +6,7 @@ import type { ActionView } from '@/lib/client-types';
 import { KIND_LABEL, productAdminUrl } from '@/lib/client-types';
 import type { ActionKind } from '@/lib/db';
 import { enabledFields, resolvesToCustomField } from '@/lib/fields';
-import type { MatchCandidate, ProposedField } from '@/lib/types';
+import type { MatchCandidate, ProposedField, ProposedVariant } from '@/lib/types';
 import { Badge, Button, ConfidenceMeter, Spinner } from './ui';
 import {
   AlertIcon,
@@ -53,6 +53,7 @@ export function ReviewModal({
   onPrev?: () => void;
 }) {
   const [fields, setFields] = useState<ProposedField[]>(action.payload.fields);
+  const [variants, setVariants] = useState<ProposedVariant[]>(action.payload.variants ?? []);
   const [productId, setProductId] = useState<number | null>(action.product_id);
   const [variantId, setVariantId] = useState<number | null>(action.variant_id);
   const [kind, setKind] = useState<ActionKind>(action.kind);
@@ -64,6 +65,7 @@ export function ReviewModal({
   const dialogRef = useRef<HTMLDivElement>(null);
 
   const active = enabledFields(fields);
+  const activeVariants = enabledFields(variants);
   const hasImage = Boolean(action.payload.image);
   const sourceImage = action.payload.image ?? null;
   const transcribedFrom = !action.payload.image ? (action.payload.sourceImage ?? null) : null;
@@ -146,7 +148,7 @@ export function ReviewModal({
       await fetch(`/api/queue/${action.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ product_id: productId, variant_id: variantId, kind, fields }),
+        body: JSON.stringify({ product_id: productId, variant_id: variantId, kind, fields, variants }),
       });
       const res = await fetch(`/api/queue/${action.id}/apply`, { method: 'POST' });
       const json = await res.json();
@@ -165,7 +167,7 @@ export function ReviewModal({
 
   const canApply =
     !isApplied && (kind === 'create_product' || productId !== null) &&
-    (hasImage || active.length > 0 || kind === 'create_product');
+    (hasImage || active.length > 0 || activeVariants.length > 0 || kind === 'create_product');
 
   return (
     <div
@@ -312,7 +314,11 @@ export function ReviewModal({
                 )}
               </div>
 
-              {fields.length === 0 ? (
+              {fields.length === 0 && variants.length > 0 ? (
+                <p className="mt-2 rounded-lg bg-bc-surface px-3 py-2.5 text-[13px] text-bc-muted">
+                  No product-level values to write — see the variants below.
+                </p>
+              ) : fields.length === 0 ? (
                 <p className="mt-2 rounded-lg bg-bc-surface px-3 py-2.5 text-[13px] text-bc-muted">
                   Nothing new to write — every value in the source already matches the catalog.
                 </p>
@@ -395,6 +401,83 @@ export function ReviewModal({
                 </ul>
               )}
             </section>
+
+            {variants.length > 0 && (
+              <section>
+                <div className="flex items-center justify-between">
+                  <SectionTitle>
+                    Variants{' '}
+                    <span className="tnum font-normal text-bc-muted">
+                      ({activeVariants.length} of {variants.length})
+                    </span>
+                  </SectionTitle>
+                  {!isApplied && (
+                    <button
+                      onClick={() => {
+                        const turnOff = activeVariants.length > 0;
+                        setVariants((prev) => prev.map((v) => ({ ...v, disabled: turnOff })));
+                      }}
+                      className="text-xs font-medium text-bc-muted hover:text-bc-blue-600"
+                    >
+                      {activeVariants.length > 0 ? 'Disable all' : 'Enable all'}
+                    </button>
+                  )}
+                </div>
+                <ul className="mt-2 divide-y divide-bc-line overflow-hidden rounded-xl border border-bc-line">
+                  {variants.map((v, i) => {
+                    const off = Boolean(v.disabled);
+                    const label = v.options.map((o) => o.value).join(' / ');
+                    return (
+                      <li
+                        key={`${label}-${i}`}
+                        className={clsx(
+                          'group flex items-center gap-3 px-3 py-2 transition-colors',
+                          off ? 'bg-bc-surface/70' : 'bg-white hover:bg-bc-blue-50/30',
+                        )}
+                      >
+                        <div className={clsx('min-w-0 flex-1', off && 'opacity-55')}>
+                          <p
+                            className={clsx(
+                              'truncate text-[13px] font-semibold text-bc-ink',
+                              off && 'line-through decoration-bc-muted/60',
+                            )}
+                            title={v.evidence}
+                          >
+                            {label}
+                          </p>
+                          <p className="tnum truncate text-[11px] text-bc-muted">
+                            {v.options.map((o) => o.name).join(' / ')}
+                            {v.sku && ` · ${v.sku}`}
+                            {v.price != null && ` · ${v.price}`}
+                          </p>
+                        </div>
+                        {off && <Badge tone="neutral">won’t be created</Badge>}
+                        {!isApplied && (
+                          <button
+                            onClick={() =>
+                              setVariants((prev) =>
+                                prev.map((x, j) => (j === i ? { ...x, disabled: !x.disabled } : x)),
+                              )
+                            }
+                            aria-pressed={off}
+                            title={off ? 'Include this variant again' : 'Exclude this variant'}
+                            aria-label={off ? `Re-enable ${label}` : `Exclude ${label}`}
+                            className={clsx(
+                              'grid size-6 shrink-0 place-items-center rounded transition',
+                              off
+                                ? 'text-bc-blue-600 opacity-100 hover:bg-bc-blue-50'
+                                : 'text-bc-muted opacity-0 hover:bg-red-50 hover:text-bc-red group-hover:opacity-100 focus-visible:opacity-100',
+                            )}
+                          >
+                            {off ? <PlusIcon className="size-4" /> : <XIcon className="size-3.5" />}
+                          </button>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              </section>
+            )}
 
             {action.payload.notes.length > 0 && (
               <section>
@@ -601,7 +684,7 @@ export function ReviewModal({
                 variant="secondary"
                 loading={busy === 'save'}
                 onClick={() =>
-                  patch({ product_id: productId, variant_id: variantId, kind, fields }, 'save')
+                  patch({ product_id: productId, variant_id: variantId, kind, fields, variants }, 'save')
                 }
               >
                 Save changes

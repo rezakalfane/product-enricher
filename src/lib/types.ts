@@ -14,6 +14,17 @@ export type ProposedField = {
   disabled?: boolean;
 };
 
+/** A flavour/strength/size of a grouped product, created as a BigCommerce variant. */
+export type ProposedVariant = {
+  sku: string | null;
+  price: number | null;
+  /** Option name → value, e.g. Flavour = Blue Razz. */
+  options: { name: string; value: string }[];
+  evidence: string;
+  /** Excluded from the write by the reviewer. */
+  disabled?: boolean;
+};
+
 export type MatchCandidate = {
   product_id: number;
   name: string;
@@ -38,6 +49,8 @@ export type ActionPayload = {
     description: string | null;
   };
   fields: ProposedField[];
+  /** Variants to create when the source groups several flavours into one product. */
+  variants?: ProposedVariant[];
   /** Populated for image actions. Path is relative to UPLOAD_DIR. */
   image?: { path: string; filename: string; ocrText: string | null; caption: string | null };
   /**

@@ -4,7 +4,7 @@ import { now, run, type QueueAction } from './db';
 import { env } from './env';
 import { enabledFields, NUMERIC_FIELDS, resolvesToCustomField } from './fields';
 import { getUpload } from './storage';
-import type { ActionPayload } from './types';
+import type { ActionPayload, ProposedVariant } from './types';
 
 function splitFields(fields: ActionPayload['fields']) {
   const core: Record<string, string | number> = {};
@@ -39,6 +39,87 @@ async function writeCustomFields(productId: number, fields: { name: string; valu
   }
 }
 
+/** BigCommerce requires a SKU per variant; derive one from the base SKU or name when the source had none. */
+function variantSku(base: string, v: ProposedVariant): string {
+  if (v.sku) return v.sku;
+  const suffix = v.options.map((o) => o.value).join('-');
+  return `${base}-${suffix}`
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 255);
+}
+
+type BCOption = {
+  id: number;
+  display_name: string;
+  option_values: { id: number; label: string }[];
+};
+
+/**
+ * Add variants to an existing product, creating option values as needed. A product with no
+ * options yet gets the proposed options; otherwise a variant must use exactly the product's
+ * options, since BigCommerce needs a value for every option on every variant.
+ */
+async function addVariants(productId: number, base: string, variants: ProposedVariant[]) {
+  const optionsPath = `/v3/catalog/products/${productId}/options`;
+  const options = await bc<BCOption[]>(optionsPath, { query: { limit: 250 } });
+  const hadOptions = options.length > 0;
+  const find = (name: string) =>
+    options.find((o) => o.display_name.trim().toLowerCase() === name.trim().toLowerCase());
+
+  let added = 0;
+  const skipped: string[] = [];
+  for (const v of variants) {
+    const label = v.options.map((o) => o.value).join(' / ');
+    const fits = hadOptions
+      ? v.options.length === options.length && v.options.every((o) => find(o.name))
+      : v.options.length > 0;
+    if (!fits) {
+      skipped.push(label);
+      continue;
+    }
+
+    const optionValues: { id: number; option_id: number }[] = [];
+    for (const o of v.options) {
+      let option = find(o.name);
+      if (!option) {
+        option = await bc<BCOption>(optionsPath, {
+          method: 'POST',
+          body: {
+            display_name: o.name,
+            type: 'dropdown',
+            option_values: [{ label: o.value, sort_order: 0 }],
+          },
+        });
+        options.push(option);
+      }
+      let value = option.option_values.find(
+        (x) => x.label.trim().toLowerCase() === o.value.trim().toLowerCase(),
+      );
+      if (!value) {
+        value = await bc<{ id: number; label: string }>(`${optionsPath}/${option.id}/values`, {
+          method: 'POST',
+          body: { label: o.value, sort_order: option.option_values.length },
+        });
+        option.option_values.push(value);
+      }
+      optionValues.push({ id: value.id, option_id: option.id });
+    }
+
+    await bc(`/v3/catalog/products/${productId}/variants`, {
+      method: 'POST',
+      body: {
+        sku: variantSku(base, v),
+        ...(v.price != null ? { price: v.price } : {}),
+        option_values: optionValues,
+      },
+    });
+    added++;
+  }
+  return { added, skipped };
+}
+
 /** Push a stored upload to BigCommerce as multipart form data. */
 async function uploadImage(productId: number, storedPath: string, filename: string, isThumbnail: boolean) {
   const buf = await getUpload(storedPath);
@@ -61,8 +142,10 @@ export type ApplyResult = { productId: number; message: string; url: string };
 export async function applyAction(action: QueueAction): Promise<ApplyResult> {
   const payload = JSON.parse(action.payload) as ActionPayload;
   const { core, custom } = splitFields(payload.fields);
+  const variants = enabledFields(payload.variants ?? []);
 
   if (action.kind === 'create_product') {
+    const base = payload.extracted.sku ?? payload.extracted.name;
     const created = await bc<BCProduct>('/v3/catalog/products', {
       method: 'POST',
       body: {
@@ -73,6 +156,19 @@ export async function applyAction(action: QueueAction): Promise<ApplyResult> {
         sku: payload.extracted.sku ?? undefined,
         description: payload.extracted.description ?? undefined,
         ...core,
+        // Inline variants let BigCommerce create the options and values in the same call.
+        ...(variants.length > 0
+          ? {
+              variants: variants.map((v) => ({
+                sku: variantSku(base, v),
+                ...(v.price != null ? { price: v.price } : {}),
+                option_values: v.options.map((o) => ({
+                  option_display_name: o.name,
+                  label: o.value,
+                })),
+              })),
+            }
+          : {}),
       },
     });
     await bc('/v3/catalog/products/channel-assignments', {
@@ -85,7 +181,10 @@ export async function applyAction(action: QueueAction): Promise<ApplyResult> {
     }
     return {
       productId: created.id,
-      message: `Created "${created.name}" and assigned it to ${env.channelName}.`,
+      message:
+        `Created "${created.name}"` +
+        (variants.length > 0 ? ` with ${variants.length} variant(s)` : '') +
+        ` and assigned it to ${env.channelName}.`,
       url: adminUrl(created.id),
     };
   }
@@ -99,7 +198,16 @@ export async function applyAction(action: QueueAction): Promise<ApplyResult> {
     }
     await writeCustomFields(productId, custom);
     const n = Object.keys(core).length + custom.length;
-    return { productId, message: `Updated ${n} field(s).`, url: adminUrl(productId) };
+    const parts = [`Updated ${n} field(s)`];
+    if (variants.length > 0) {
+      const base = payload.extracted.sku ?? payload.extracted.name;
+      const { added, skipped } = await addVariants(productId, base, variants);
+      parts.push(`added ${added} variant(s)`);
+      if (skipped.length > 0) {
+        parts.push(`skipped ${skipped.join(', ')} (options don't match the product's)`);
+      }
+    }
+    return { productId, message: `${parts.join(', ')}.`, url: adminUrl(productId) };
   }
 
   if (!payload.image) throw new Error('This action has no image attached.');

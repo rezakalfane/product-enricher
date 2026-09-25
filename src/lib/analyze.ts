@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { analyzeDocument, analyzeImage } from './ai';
 import { all, batch, now, run } from './db';
 import { classify, extractText, ocrImage, termsFromFilename } from './extract';
-import { findMatches, pruneUnchangedFields } from './match';
+import { findMatches, pruneExistingVariants, pruneUnchangedFields } from './match';
 import { deleteUpload, putUpload } from './storage';
 import type { ActionPayload, MatchCandidate, ProposedField } from './types';
 
@@ -101,11 +101,17 @@ export async function analyzeTextSource(
       const described =
         `Name: ${p.name}\nSKU: ${p.sku ?? '—'}\nBrand: ${p.brand ?? '—'}\n` +
         `Price: ${p.price ?? '—'}\nVariant: ${p.variantHint ?? '—'}\n` +
-        `Details: ${p.fields.map((f) => `${f.label}=${f.value}`).join('; ')}`;
+        `Details: ${p.fields.map((f) => `${f.label}=${f.value}`).join('; ')}` +
+        (p.variants.length > 0
+          ? `\nVariants: ${p.variants
+              .map((v) => v.options.map((o) => `${o.name}=${o.value}`).join(', '))
+              .join('; ')}`
+          : '');
 
       const { candidates, isNew } = await findMatches({
         name: p.name,
-        sku: p.sku,
+        // A grouped product often has SKUs only on its variants; any of them finds the parent.
+        sku: p.sku ?? p.variants.find((v) => v.sku)?.sku ?? null,
         brand: p.brand,
         variantHint: p.variantHint,
         searchTerms: p.searchTerms,
@@ -123,15 +129,20 @@ export async function analyzeTextSource(
           description: p.description,
         },
         fields: top && !isNew ? await pruneUnchangedFields(top.product_id, fields) : fields,
+        variants:
+          top && !isNew ? await pruneExistingVariants(top.product_id, p.variants) : p.variants,
         sourceImage,
         notes: doc.notes,
       };
+
+      const variants = payload.variants ?? [];
+      const withVariants = variants.length > 0 ? ` and ${variants.length} variant(s)` : '';
 
       if (isNew || !top) {
         rows.push({
           kind: 'create_product',
           title: p.name,
-          summary: `New product from ${doc.documentType}. ${fields.length} attribute(s) found.`,
+          summary: `New product from ${doc.documentType}. ${fields.length} attribute(s)${withVariants} found.`,
           confidence: top?.score ?? 0,
           productId: null,
           variantId: null,
@@ -143,9 +154,9 @@ export async function analyzeTextSource(
           kind: 'update_product',
           title: p.name,
           summary:
-            payload.fields.length === 0
+            payload.fields.length === 0 && variants.length === 0
               ? `Matched "${top.name}" — no new values to write.`
-              : `Enrich "${top.name}" with ${payload.fields.length} field(s).`,
+              : `Enrich "${top.name}" with ${payload.fields.length} field(s)${withVariants}.`,
           confidence: top.score,
           productId: top.product_id,
           variantId: top.variant_id ?? null,

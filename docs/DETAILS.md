@@ -197,14 +197,19 @@ Zod schema. All three pass `providerOptions.openai.reasoningEffort` from `OPENAI
 ### 6.1 `analyzeDocument(text, filename)` — model `OPENAI_MODEL`
 
 System prompt: extract structured product data; **only report values that literally appear in the
-source**; one entry per product; prices as plain numbers.
+source**; one entry per product; prices as plain numbers. Items of the same line that differ only by
+flavour, strength, size, or colour are **grouped into one product with variants** rather than one
+product each — e.g. "10 new flavours in Kits and Pods" is two products with 10 Flavour variants
+each. Different formats (10ml vs 100ml, kit vs pods) stay separate products, and a bare count
+("40 flavours available") never becomes variants.
 
 Output schema:
 
 | Field | Meaning |
 | --- | --- |
 | `documentType` | e.g. `supplier spec sheet`, `price list` |
-| `products[]` | `name`, `sku?`, `brand?`, `price?`, `description?`, `variantHint?`, `searchTerms[]` (2-5), `fields[]` |
+| `products[]` | `name`, `sku?`, `brand?`, `price?`, `description?`, `variantHint?`, `searchTerms[]` (2-5), `fields[]`, `variants[]` |
+| `products[].variants[]` | `sku?`, `price?`, `options[]` (`name`, `value`, e.g. Flavour = Cherry Cola), `evidence` |
 | `products[].fields[]` | `name` (BC field key or custom name), `label`, `value`, `custom`, `evidence` |
 | `notes[]` | Caveats for the reviewer |
 
@@ -275,8 +280,14 @@ values always count as new.
 
 | Kind | Calls |
 | --- | --- |
-| `create_product` | `POST /v3/catalog/products` (type `physical`, name, price, weight, SKU, description + core fields) → `PUT /v3/catalog/products/channel-assignments` → custom fields → image upload as thumbnail if present |
-| `update_product` | `PUT /v3/catalog/products/:id` with core fields (skipped if none) → custom fields |
+| `create_product` | `POST /v3/catalog/products` (type `physical`, name, price, weight, SKU, description + core fields, inline `variants` with `option_display_name`/`label` so BigCommerce creates the options) → `PUT /v3/catalog/products/channel-assignments` → custom fields → image upload as thumbnail if present |
+| `update_product` | `PUT /v3/catalog/products/:id` with core fields (skipped if none) → custom fields → new variants: find or create option values, then `POST /v3/catalog/products/:id/variants` |
+
+**Variants.** A variant without a SKU in the source gets one derived from the product SKU (or name)
+plus its option values. On update, variants the product already has (same SKU or same option
+values) are dropped at analysis time. A product with no options gets the proposed options; one that
+already has options only accepts variants using exactly those options — the rest are skipped and
+named in the result message.
 | `add_product_image` | `POST /v3/catalog/products/:id/images` (multipart); set as thumbnail if the product has no images |
 | `set_variant_image` | Upload to the product, then `PUT /v3/catalog/products/:id/variants/:vid` with `image_url` set to the hosted `url_standard` |
 
@@ -618,7 +629,8 @@ scripts/                         fixture generation (Node + Python)
   on later sweeps.
 - **Brand is written as a custom field**, not mapped to `brand_id`. Categories aren't set on created
   products.
-- **Created products are minimal**: type `physical`, no variants or options.
+- **Created products are minimal**: type `physical`; variants carry only SKU, price, and option
+  values (no per-variant images, weight, or inventory).
 - **Long documents** are truncated to 120,000 characters before extraction.
 - **Client batch tracking gives up after ~8 minutes** with a message; the queue still shows the
   job's final state when it lands.

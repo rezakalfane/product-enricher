@@ -22,8 +22,22 @@ const fieldSchema = z.object({
   evidence: z.string().describe('The sentence or line in the source that this value came from.'),
 });
 
+const variantSchema = z.object({
+  sku: z.string().nullable(),
+  price: z.number().nullable(),
+  options: z
+    .array(z.object({ name: z.string(), value: z.string() }))
+    .describe('What sets this variant apart, e.g. [{ name: "Flavour", value: "Blue Razz" }].'),
+  evidence: z.string().describe('The line in the source this variant came from.'),
+});
+
 const productSchema = z.object({
-  name: z.string().describe('Product name exactly as written in the source.'),
+  name: z
+    .string()
+    .describe(
+      'Product name as written in the source. For a product with variants, the shared line name ' +
+        'without the flavour/strength/size, e.g. "Elux Legend Nic Salt 10ml".',
+    ),
   sku: z.string().nullable(),
   brand: z.string().nullable(),
   price: z.number().nullable(),
@@ -35,7 +49,18 @@ const productSchema = z.object({
   searchTerms: z
     .array(z.string())
     .describe('2-5 short keyword phrases to look this product up in a catalog. Brand and model first.'),
-  fields: z.array(fieldSchema).describe('Every enrichable attribute found for this product.'),
+  fields: z
+    .array(fieldSchema)
+    .describe(
+      'Every enrichable attribute found for this product. For a product with variants, only ' +
+        'attributes shared by all of them.',
+    ),
+  variants: z
+    .array(variantSchema)
+    .describe(
+      'One entry per flavour, strength, size, or colour offered in this product line. Empty for a ' +
+        'single standalone product.',
+    ),
 });
 
 export type ExtractedProduct = z.infer<typeof productSchema>;
@@ -58,7 +83,16 @@ export async function analyzeDocument(text: string, filename: string) {
       'You extract structured product data from merchant documents so it can enrich an ecommerce ' +
       'catalog. Only report values that literally appear in the source — never invent specs, ' +
       'prices, or marketing copy. If the document describes several products, return one entry ' +
-      'each. Prices must be plain numbers without currency symbols.',
+      'each — but group items that are the same product line differing only by flavour, ' +
+      'nicotine strength, size, or colour (same brand, range, and format) into ONE product with ' +
+      'a variant per flavour, rather than one product per flavour. Name options consistently ' +
+      'across variants ("Flavour", "Nicotine Strength", "Size", "Colour"). Different ranges, ' +
+      'formats (10ml vs 100ml shortfill, kit vs pods), or hardware are separate products. So "10 ' +
+      'new flavours available in Kits and Pods" is two products (the kit and the pods), each with ' +
+      'the 10 flavours as variants — a strength shared by all of them belongs in the name, not in ' +
+      'an option. Only list variants that are named in the source; a count such as "40 flavours ' +
+      'available" is not a list of variants. Prices must be plain numbers without currency ' +
+      'symbols.',
     prompt: `Source file: ${filename}\n\n---\n${text.slice(0, 120_000)}\n---`,
   });
   return object;
@@ -157,8 +191,9 @@ export async function rankMatches(args: {
     system:
       'You decide whether a product described in a supplier document already exists in a catalog. ' +
       'Score conservatively: a different capacity, size, or colourway is a different product unless ' +
-      'the catalog entry is clearly the parent of that variant. Set isNew when no candidate scores ' +
-      'above 0.6.',
+      'the catalog entry is clearly the parent of that variant. When the described product lists ' +
+      'variants (flavours, strengths), the catalog product for the same line is a match even if it ' +
+      'lacks some of those variants. Set isNew when no candidate scores above 0.6.',
     prompt:
       `Product from the document:\n${args.extracted}\n\n` +
       `Catalog candidates:\n${args.candidates

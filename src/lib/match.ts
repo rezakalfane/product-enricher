@@ -1,6 +1,6 @@
 import { findBySku, findVariantBySku, getProduct, searchProducts, type BCProduct } from './bigcommerce';
 import { rankMatches } from './ai';
-import type { MatchCandidate } from './types';
+import type { MatchCandidate, ProposedVariant } from './types';
 
 function imageOf(p: BCProduct): string | null {
   const imgs = p.images ?? [];
@@ -114,4 +114,32 @@ export async function pruneUnchangedFields<T extends { name: string; value: stri
     if (existing === undefined || existing === null || existing === '') return true;
     return norm(existing) !== norm(f.value);
   });
+}
+
+/** Option labels as a comparable key, independent of option order and case. */
+export function optionKey(options: { value: string }[]): string {
+  return options
+    .map((o) => o.value.trim().toLowerCase())
+    .sort()
+    .join('|');
+}
+
+/** Drop proposed variants the product already has, by SKU or by option values. */
+export async function pruneExistingVariants(
+  productId: number,
+  variants: ProposedVariant[],
+): Promise<ProposedVariant[]> {
+  if (variants.length === 0) return variants;
+  const product = await getProduct(productId, 'variants').catch(() => null);
+  if (!product) return variants;
+  const existing = product.variants ?? [];
+  const skus = new Set(existing.map((v) => v.sku.toLowerCase()).filter(Boolean));
+  const keys = new Set(
+    existing
+      .filter((v) => v.option_values.length > 0)
+      .map((v) => optionKey(v.option_values.map((o) => ({ value: o.label })))),
+  );
+  return variants.filter(
+    (v) => !(v.sku && skus.has(v.sku.toLowerCase())) && !keys.has(optionKey(v.options)),
+  );
 }
