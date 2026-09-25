@@ -22,9 +22,40 @@ const fieldSchema = z.object({
   evidence: z.string().describe('The sentence or line in the source that this value came from.'),
 });
 
+const priceSchema = z.object({
+  value: z.number().describe('Plain number without currency symbol, e.g. 12.99.'),
+  currency: z.string().nullable().describe('ISO code when stated or implied by a symbol, e.g. "GBP".'),
+  label: z.string().describe('The label as written in the source, e.g. "Trade GBP", "Unit Cost", "RRP".'),
+  evidence: z.string().describe('The line or table cell this price came from.'),
+});
+
+/**
+ * Sources label prices every way imaginable, so the model sorts each one by meaning and
+ * the analyzer maps the result onto BigCommerce's price fields.
+ */
+const pricesSchema = z.object({
+  cost: priceSchema
+    .nullable()
+    .describe(
+      'What the merchant pays the supplier: trade price, unit cost, wholesale, net, buy price, ' +
+        'cost price, dealer price.',
+    ),
+  retail: priceSchema
+    .nullable()
+    .describe('Recommended consumer price: RRP, MSRP, SRP, retail price, "sells at".'),
+  unlabelled: priceSchema
+    .nullable()
+    .describe(
+      'A price whose type the source does not state, e.g. a bare "GBP 12.99" or "Price". Use ' +
+        'only when neither cost nor retail applies.',
+    ),
+});
+
+export type ExtractedPrices = z.infer<typeof pricesSchema>;
+
 const variantSchema = z.object({
   sku: z.string().nullable(),
-  price: z.number().nullable(),
+  prices: pricesSchema.describe('Only prices specific to this variant; leave all null otherwise.'),
   options: z
     .array(z.object({ name: z.string(), value: z.string() }))
     .describe('What sets this variant apart, e.g. [{ name: "Flavour", value: "Blue Razz" }].'),
@@ -40,7 +71,7 @@ const productSchema = z.object({
     ),
   sku: z.string().nullable(),
   brand: z.string().nullable(),
-  price: z.number().nullable(),
+  prices: pricesSchema,
   description: z.string().nullable(),
   variantHint: z
     .string()
@@ -52,8 +83,8 @@ const productSchema = z.object({
   fields: z
     .array(fieldSchema)
     .describe(
-      'Every enrichable attribute found for this product. For a product with variants, only ' +
-        'attributes shared by all of them.',
+      'Every enrichable attribute found for this product except prices, which go in `prices`. ' +
+        'For a product with variants, only attributes shared by all of them.',
     ),
   variants: z
     .array(variantSchema)
@@ -91,8 +122,11 @@ export async function analyzeDocument(text: string, filename: string) {
       'new flavours available in Kits and Pods" is two products (the kit and the pods), each with ' +
       'the 10 flavours as variants — a strength shared by all of them belongs in the name, not in ' +
       'an option. Only list variants that are named in the source; a count such as "40 flavours ' +
-      'available" is not a list of variants. Prices must be plain numbers without currency ' +
-      'symbols.',
+      'available" is not a list of variants. Classify every price by meaning, not by its label: ' +
+      'trade/unit cost/wholesale is `cost`, RRP/MSRP is `retail`. In a trade document (price list, ' +
+      'supplier spec sheet, anything mentioning trade, wholesale, case quantities, or ex-VAT) a ' +
+      'price that only says "Price" or "GBP 12.99" is the trade cost unless the source says ' +
+      'otherwise; use `unlabelled` only when you genuinely cannot tell.',
     prompt: `Source file: ${filename}\n\n---\n${text.slice(0, 120_000)}\n---`,
   });
   return object;

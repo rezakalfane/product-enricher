@@ -3,8 +3,9 @@ import { analyzeDocument, analyzeImage } from './ai';
 import { all, batch, now, run } from './db';
 import { classify, extractText, ocrImage, termsFromFilename } from './extract';
 import { findMatches, pruneExistingVariants, pruneUnchangedFields } from './match';
+import { priceFields, sellingPrice, withoutPriceFields } from './prices';
 import { deleteUpload, putUpload } from './storage';
-import type { ActionPayload, MatchCandidate, ProposedField } from './types';
+import type { ActionPayload, MatchCandidate, ProposedField, ProposedVariant } from './types';
 
 type Insert = {
   kind: 'create_product' | 'update_product' | 'add_product_image' | 'set_variant_image';
@@ -100,7 +101,8 @@ export async function analyzeTextSource(
     for (const p of doc.products) {
       const described =
         `Name: ${p.name}\nSKU: ${p.sku ?? '—'}\nBrand: ${p.brand ?? '—'}\n` +
-        `Price: ${p.price ?? '—'}\nVariant: ${p.variantHint ?? '—'}\n` +
+        `Cost: ${p.prices.cost?.value ?? '—'}\nRRP: ${p.prices.retail?.value ?? '—'}\n` +
+        `Variant: ${p.variantHint ?? '—'}\n` +
         `Details: ${p.fields.map((f) => `${f.label}=${f.value}`).join('; ')}` +
         (p.variants.length > 0
           ? `\nVariants: ${p.variants
@@ -119,20 +121,31 @@ export async function analyzeTextSource(
       });
 
       const top = candidates[0];
-      const fields: ProposedField[] = p.fields;
+      const creating = isNew || !top;
+      const prices = priceFields(p.prices, { isNew: creating });
+      const fields: ProposedField[] = [...prices.fields, ...withoutPriceFields(p.fields)];
+      const proposedVariants: ProposedVariant[] = p.variants.map((v) => ({
+        sku: v.sku,
+        price: sellingPrice(v.prices),
+        costPrice: v.prices.cost?.value ?? null,
+        retailPrice: v.prices.retail?.value ?? null,
+        options: v.options,
+        evidence: v.evidence,
+      }));
       const payload: ActionPayload = {
         extracted: {
           name: p.name,
           sku: p.sku,
           brand: p.brand,
-          price: p.price,
+          price: sellingPrice(p.prices),
           description: p.description,
         },
-        fields: top && !isNew ? await pruneUnchangedFields(top.product_id, fields) : fields,
-        variants:
-          top && !isNew ? await pruneExistingVariants(top.product_id, p.variants) : p.variants,
+        fields: creating ? fields : await pruneUnchangedFields(top.product_id, fields),
+        variants: creating
+          ? proposedVariants
+          : await pruneExistingVariants(top.product_id, proposedVariants),
         sourceImage,
-        notes: doc.notes,
+        notes: [...prices.notes, ...doc.notes],
       };
 
       const variants = payload.variants ?? [];

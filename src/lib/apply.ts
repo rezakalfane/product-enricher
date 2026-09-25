@@ -50,6 +50,15 @@ function variantSku(base: string, v: ProposedVariant): string {
     .slice(0, 255);
 }
 
+/** Only the prices the source gave for this variant; the rest inherit from the product. */
+function variantPrices(v: ProposedVariant) {
+  return {
+    ...(v.price != null ? { price: v.price } : {}),
+    ...(v.costPrice != null ? { cost_price: v.costPrice } : {}),
+    ...(v.retailPrice != null ? { retail_price: v.retailPrice } : {}),
+  };
+}
+
 type BCOption = {
   id: number;
   display_name: string;
@@ -111,7 +120,7 @@ async function addVariants(productId: number, base: string, variants: ProposedVa
       method: 'POST',
       body: {
         sku: variantSku(base, v),
-        ...(v.price != null ? { price: v.price } : {}),
+        ...variantPrices(v),
         option_values: optionValues,
       },
     });
@@ -161,7 +170,7 @@ export async function applyAction(action: QueueAction): Promise<ApplyResult> {
           ? {
               variants: variants.map((v) => ({
                 sku: variantSku(base, v),
-                ...(v.price != null ? { price: v.price } : {}),
+                ...variantPrices(v),
                 option_values: v.options.map((o) => ({
                   option_display_name: o.name,
                   label: o.value,

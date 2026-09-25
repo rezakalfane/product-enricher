@@ -448,7 +448,9 @@ export function ReviewModal({
                           <p className="tnum truncate text-[11px] text-bc-muted">
                             {v.options.map((o) => o.name).join(' / ')}
                             {v.sku && ` · ${v.sku}`}
-                            {v.price != null && ` · ${v.price}`}
+                            {v.price != null && ` · Price ${v.price}`}
+                            {v.costPrice != null && ` · Cost ${v.costPrice}`}
+                            {v.retailPrice != null && ` · RRP ${v.retailPrice}`}
                           </p>
                         </div>
                         {off && <Badge tone="neutral">won’t be created</Badge>}

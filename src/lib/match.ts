@@ -1,5 +1,6 @@
 import { findBySku, findVariantBySku, getProduct, searchProducts, type BCProduct } from './bigcommerce';
 import { rankMatches } from './ai';
+import { NUMERIC_FIELDS } from './fields';
 import type { MatchCandidate, ProposedVariant } from './types';
 
 function imageOf(p: BCProduct): string | null {
@@ -112,6 +113,11 @@ export async function pruneUnchangedFields<T extends { name: string; value: stri
       ? custom.get(f.name.toLowerCase())
       : (product as unknown as Record<string, unknown>)[f.name];
     if (existing === undefined || existing === null || existing === '') return true;
+    // "6.00" in a document is the same price as 6 in the catalog.
+    if (!f.custom && NUMERIC_FIELDS.has(f.name)) {
+      const a = Number(String(f.value).replace(/[^0-9.]/g, ''));
+      if (!Number.isNaN(a) && a === Number(existing)) return false;
+    }
     return norm(existing) !== norm(f.value);
   });
 }
