@@ -69,6 +69,8 @@ body {
   outline-offset: 2px;
   border-radius: 4px;
 }
+/* The dialog takes focus only to capture keys; it isn't a control, so no ring. */
+[role='dialog']:focus-visible { outline: none; }
 
 /* Thin, unobtrusive scrollbars inside panels and modals. */
 .scroll-slim::-webkit-scrollbar { width: 10px; height: 10px; }

@@ -34,6 +34,12 @@ export const SparkIcon = (p: P) => (
 export const SearchIcon = (p: P) => (
   <svg {...base} className={p.className}><circle cx="11" cy="11" r="6.5" /><path d="m16 16 4 4" /></svg>
 );
+export const ChevronLeftIcon = (p: P) => (
+  <svg {...base} className={p.className}><path d="m14.5 6-6 6 6 6" /></svg>
+);
+export const ChevronRightIcon = (p: P) => (
+  <svg {...base} className={p.className}><path d="m9.5 6 6 6-6 6" /></svg>
+);
 export const LinkIcon = (p: P) => (
   <svg {...base} className={p.className}><path d="M10.5 13.5a4 4 0 0 0 5.7 0l2.3-2.3a4 4 0 1 0-5.7-5.7L11.5 6.8" /><path d="M13.5 10.5a4 4 0 0 0-5.7 0l-2.3 2.3a4 4 0 1 0 5.7 5.7l1.3-1.3" /></svg>
 );

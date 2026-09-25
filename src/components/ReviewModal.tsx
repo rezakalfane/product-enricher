@@ -8,7 +8,18 @@ import type { ActionKind } from '@/lib/db';
 import { enabledFields, resolvesToCustomField } from '@/lib/fields';
 import type { MatchCandidate, ProposedField } from '@/lib/types';
 import { Badge, Button, ConfidenceMeter, Spinner } from './ui';
-import { AlertIcon, BoxIcon, CheckIcon, LinkIcon, PlusIcon, SearchIcon, SparkIcon, XIcon } from './icons';
+import {
+  AlertIcon,
+  BoxIcon,
+  CheckIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  LinkIcon,
+  PlusIcon,
+  SearchIcon,
+  SparkIcon,
+  XIcon,
+} from './icons';
 
 type SearchHit = {
   product_id: number;
@@ -26,6 +37,7 @@ export function ReviewModal({
   onChanged,
   position,
   onNext,
+  onPrev,
 }: {
   action: ActionView;
   /** Enables the Control Panel link on product cards. */
@@ -35,6 +47,7 @@ export function ReviewModal({
   /** Set when reviewing a batch from one analysis, e.g. 2 of 4. */
   position?: { index: number; total: number };
   onNext?: () => void;
+  onPrev?: () => void;
 }) {
   const [fields, setFields] = useState<ProposedField[]>(action.payload.fields);
   const [productId, setProductId] = useState<number | null>(action.product_id);
@@ -54,11 +67,27 @@ export function ReviewModal({
   const isApplied = action.status === 'applied';
 
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
-    document.addEventListener('keydown', onKey);
     dialogRef.current?.focus();
+  }, []);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') return onClose();
+      // Arrow keys belong to the field while typing.
+      const t = e.target as HTMLElement | null;
+      if (t?.closest('input, textarea, select, [contenteditable="true"]')) return;
+      if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
+      if (e.key === 'ArrowLeft' && onPrev) {
+        e.preventDefault();
+        onPrev();
+      } else if (e.key === 'ArrowRight' && onNext) {
+        e.preventDefault();
+        onNext();
+      }
+    };
+    document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  }, [onClose, onNext, onPrev]);
 
   // Debounced catalog search for re-pointing the action at a different product.
   useEffect(() => {
@@ -161,16 +190,25 @@ export function ReviewModal({
               {action.filename && (
                 <span className="truncate text-xs text-bc-muted">from {action.filename}</span>
               )}
-              {position && (
-                <span className="tnum ml-auto shrink-0 text-[11px] font-semibold text-bc-muted">
-                  {position.index} of {position.total}
-                </span>
-              )}
             </div>
             <h2 className="mt-1.5 truncate text-lg font-semibold tracking-tight text-bc-ink">
               {action.title}
             </h2>
           </div>
+          {position && (
+            <div className="flex shrink-0 items-center gap-1">
+              <NavButton label="Previous" shortcut="←" keys="ArrowLeft" onClick={onPrev}>
+                <ChevronLeftIcon className="size-4.5" />
+              </NavButton>
+              <span className="tnum min-w-12 text-center text-[11px] font-semibold text-bc-muted">
+                {position.index} of {position.total}
+              </span>
+              <NavButton label="Next" shortcut="→" keys="ArrowRight" onClick={onNext}>
+                <ChevronRightIcon className="size-4.5" />
+              </NavButton>
+              <span className="mx-1 h-5 w-px bg-bc-line" aria-hidden />
+            </div>
+          )}
           <button
             onClick={onClose}
             aria-label="Close"
@@ -580,6 +618,33 @@ export function ReviewModal({
         </footer>
       </div>
     </div>
+  );
+}
+
+function NavButton({
+  label,
+  shortcut,
+  keys,
+  onClick,
+  children,
+}: {
+  label: string;
+  shortcut: string;
+  keys: string;
+  onClick?: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={!onClick}
+      title={`${label} (${shortcut})`}
+      aria-label={label}
+      aria-keyshortcuts={keys}
+      className="grid size-8 place-items-center rounded-lg text-bc-muted transition hover:bg-bc-surface hover:text-bc-ink disabled:pointer-events-none disabled:opacity-35"
+    >
+      {children}
+    </button>
   );
 }
 

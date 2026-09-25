@@ -36,7 +36,7 @@ export function Workspace() {
   const [loading, setLoading] = useState(true);
   const [openId, setOpenId] = useState<string | null>(null);
   const [openAction, setOpenAction] = useState<ActionView | null>(null);
-  /** Action ids from the most recent analysis, so the reviewer can step through them. */
+  /** Action ids the reviewer can step through: the latest analysis, or the list they opened from. */
   const [reviewQueue, setReviewQueue] = useState<string[]>([]);
 
   const load = useCallback(async () => {
@@ -128,6 +128,7 @@ export function Workspace() {
 
   const queueIndex = openId ? reviewQueue.indexOf(openId) : -1;
   const hasNext = queueIndex >= 0 && queueIndex < reviewQueue.length - 1;
+  const hasPrev = queueIndex > 0;
 
   const closeModal = useCallback(() => {
     setOpenId(null);
@@ -209,7 +210,10 @@ export function Workspace() {
             {actions.map((a) => (
               <li key={a.id}>
                 <button
-                  onClick={() => setOpenId(a.id)}
+                  onClick={() => {
+                    setReviewQueue(actions.map((x) => x.id));
+                    setOpenId(a.id);
+                  }}
                   className="animate-fade-up flex w-full items-center gap-4 px-5 py-3.5 text-left transition hover:bg-bc-blue-50/40"
                 >
                   <SourceThumb action={a} />
@@ -261,6 +265,7 @@ export function Workspace() {
               : undefined
           }
           onNext={hasNext ? () => setOpenId(reviewQueue[queueIndex + 1]) : undefined}
+          onPrev={hasPrev ? () => setOpenId(reviewQueue[queueIndex - 1]) : undefined}
         />
       )}
     </div>
