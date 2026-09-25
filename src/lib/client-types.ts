@@ -45,6 +45,21 @@ export const KIND_LABEL: Record<ActionKind, string> = {
   set_variant_image: 'Set variant image',
 };
 
+export const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
+/** "10 updates, 2 new products" — what a set of actions would do, grouped by kind. */
+export function kindBreakdown(kinds: ActionKind[]): string {
+  const counts = new Map<ActionKind, number>();
+  for (const k of kinds) counts.set(k, (counts.get(k) ?? 0) + 1);
+  const words: Record<ActionKind, string> = {
+    update_product: 'update',
+    create_product: 'new product',
+    add_product_image: 'product image',
+    set_variant_image: 'variant image',
+  };
+  return [...counts].map(([kind, n]) => plural(n, words[kind])).join(', ');
+}
+
 export const STATUS_LABEL: Record<ActionStatus, string> = {
   pending: 'Needs review',
   approved: 'Approved',

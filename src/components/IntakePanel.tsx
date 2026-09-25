@@ -2,12 +2,22 @@
 
 import { clsx } from 'clsx';
 import { useCallback, useRef, useState } from 'react';
+import type { ActionKind } from '@/lib/db';
 import { Button, Spinner } from './ui';
 import { DocIcon, ImageIcon, SparkIcon, TextIcon, UploadIcon } from './icons';
 
 type JobProgress = {
   id: string;
+  filename: string;
   status: 'analyzing' | 'done' | 'error';
+  note: string | null;
+};
+
+/** What one submitted batch produced, once every file in it has finished. */
+export type BatchResult = {
+  jobs: JobProgress[];
+  /** Highest confidence first. */
+  actions: { id: string; kind: ActionKind }[];
 };
 
 type Mode = 'files' | 'text';
@@ -26,7 +36,7 @@ export function IntakePanel({
   onDone,
   onPartial,
 }: {
-  onDone: (actionIds: string[]) => void;
+  onDone: (result: BatchResult) => void;
   /** Called as individual files finish, so the queue fills in progressively. */
   onPartial: () => void;
 }) {
@@ -60,18 +70,14 @@ export function IntakePanel({
           await new Promise((r) => setTimeout(r, 1200));
           const res = await fetch(`/api/jobs?ids=${ids}`);
           if (!res.ok) continue;
-          const json = (await res.json()) as {
-            jobs: JobProgress[];
-            done: boolean;
-            actionIds: string[];
-          };
+          const json = (await res.json()) as BatchResult & { done: boolean };
           const stillRunning = json.jobs.filter((j) => j.status === 'analyzing').length;
           if (stillRunning < remaining) {
             settle(remaining - stillRunning);
             onPartial();
           }
           if (json.done) {
-            onDone(json.actionIds);
+            onDone({ jobs: json.jobs, actions: json.actions });
             return;
           }
         }

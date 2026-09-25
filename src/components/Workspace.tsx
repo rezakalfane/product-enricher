@@ -1,13 +1,14 @@
 'use client';
 
 import { clsx } from 'clsx';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { ActionView, JobView, StoreInfo } from '@/lib/client-types';
-import { KIND_LABEL, STATUS_LABEL } from '@/lib/client-types';
+import { KIND_LABEL, STATUS_LABEL, kindBreakdown, plural } from '@/lib/client-types';
 import type { ActionStatus } from '@/lib/db';
 import { enabledFields } from '@/lib/fields';
-import { IntakePanel } from './IntakePanel';
+import { IntakePanel, type BatchResult } from './IntakePanel';
 import { ReviewModal } from './ReviewModal';
+import { ToastStack, type Toast } from './Toasts';
 import { Badge, Button, ConfidenceMeter, EmptyState, Spinner } from './ui';
 import { AlertIcon, BoxIcon, CheckIcon, DocIcon, ImageIcon, SparkIcon, TextIcon, TrashIcon } from './icons';
 
@@ -40,6 +41,7 @@ export function Workspace() {
   const [reviewQueue, setReviewQueue] = useState<string[]>([]);
   /** True while stepping between items, so the modal doesn't replay its opening animation. */
   const [stepping, setStepping] = useState(false);
+  const [toasts, setToasts] = useState<Toast[]>([]);
 
   const load = useCallback(async () => {
     try {
@@ -91,23 +93,22 @@ export function Workspace() {
     };
   }, [openId]);
 
-  // Read by handleAnalyzed, which runs from a batch's polling loop long after it was created.
-  const openIdRef = useRef(openId);
-  useEffect(() => {
-    openIdRef.current = openId;
-  }, [openId]);
+  const dismissToast = useCallback((id: string) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id));
+  }, []);
 
-  /** Refresh the list, then open the first action the analysis produced. */
+  /** Refresh the list and report what the batch produced, without interrupting the user. */
   const handleAnalyzed = useCallback(
-    (actionIds: string[]) => {
+    (result: BatchResult) => {
       void load();
-      if (actionIds.length === 0) return;
-      // Several batches can finish in turn; don't pull the user out of a review in progress.
-      if (openIdRef.current) return;
-      setFilter('pending');
-      setReviewQueue(actionIds);
-      setStepping(false);
-      setOpenId(actionIds[0]);
+      const ids = result.actions.map((a) => a.id);
+      const toast = batchToast(result, () => {
+        setFilter('pending');
+        setReviewQueue(ids);
+        setStepping(false);
+        setOpenId(ids[0]);
+      });
+      setToasts((prev) => [...prev, toast]);
     },
     [load],
   );
@@ -280,8 +281,43 @@ export function Workspace() {
           onPrev={hasPrev ? () => stepTo(reviewQueue[queueIndex - 1]) : undefined}
         />
       )}
+
+      <ToastStack toasts={toasts} onDismiss={dismissToast} />
     </div>
   );
+}
+
+/** "2 new products, 1 update from price-list.pdf" — with a link into the review when there's work. */
+function batchToast(result: BatchResult, review: () => void): Toast {
+  const id = crypto.randomUUID();
+  const { jobs, actions } = result;
+  const source = jobs.length === 1 ? jobs[0].filename : plural(jobs.length, 'file');
+  const failed = jobs.filter((j) => j.status === 'error');
+
+  if (actions.length > 0) {
+    const failures = failed.length > 0 ? ` · ${failed.length} failed` : '';
+    return {
+      id,
+      tone: 'success',
+      title: `${plural(actions.length, 'action')} ready for review`,
+      body: `${kindBreakdown(actions.map((a) => a.kind))} from ${source}${failures}`,
+      link: { label: 'Review', onClick: review },
+    };
+  }
+  if (failed.length > 0) {
+    return {
+      id,
+      tone: 'error',
+      title: 'Analysis failed',
+      body: jobs.length === 1 ? `${source}: ${failed[0].note ?? 'unknown error'}` : `${failed.length} of ${source} failed.`,
+    };
+  }
+  return {
+    id,
+    tone: 'info',
+    title: 'Nothing to review',
+    body: jobs.length === 1 && jobs[0].note ? `${source}: ${jobs[0].note}` : `No products found in ${source}.`,
+  };
 }
 
 /** A source that produced no reviewable action: still running, failed, or nothing found. */

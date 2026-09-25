@@ -1,6 +1,6 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { NextResponse } from 'next/server';
-import { KIND_LABEL } from '@/lib/client-types';
+import { KIND_LABEL, kindBreakdown, plural } from '@/lib/client-types';
 import { all, getDb, now, one, run, type ActionKind, type Job } from '@/lib/db';
 import { env } from '@/lib/env';
 import { queueSources } from '@/lib/intake';
@@ -163,28 +163,13 @@ async function jobResult(id: string): Promise<JobResult | null> {
   };
 }
 
-const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
-
-/** "10 updates, 2 new products" — what the actions would do, grouped by kind. */
-function breakdown(actions: JobResult['actions']): string {
-  const counts = new Map<ActionKind, number>();
-  for (const a of actions) counts.set(a.kind, (counts.get(a.kind) ?? 0) + 1);
-  const words: Record<ActionKind, string> = {
-    update_product: 'update',
-    create_product: 'new product',
-    add_product_image: 'product image',
-    set_variant_image: 'variant image',
-  };
-  return [...counts].map(([kind, n]) => plural(n, words[kind])).join(', ');
-}
-
 const MAX_LISTED = 3;
 
 function processedMessage(r: JobResult): string {
   if (r.status === 'error') return `⚠️ ${r.name} could not be processed: ${r.note ?? 'unknown error'}`;
   if (r.actions.length === 0) return `ℹ️ ${r.name} processed: nothing to review. ${r.note ?? ''}`.trim();
 
-  const lines = [`✅ ${r.name} processed: ${plural(r.actions.length, 'action')} (${breakdown(r.actions)})`];
+  const lines = [`✅ ${r.name} processed: ${plural(r.actions.length, 'action')} (${kindBreakdown(r.actions.map((a) => a.kind))})`];
   for (const a of r.actions.slice(0, MAX_LISTED)) {
     const score = a.kind === 'create_product' ? '' : ` (${Math.round(a.confidence * 100)}%)`;
     lines.push(`• ${KIND_LABEL[a.kind]}: ${a.title}${score}`);

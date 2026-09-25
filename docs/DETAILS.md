@@ -115,8 +115,9 @@ upload ─▶ job(analyzing) ─▶ pipeline ─▶ actions(pending) ─▶ revi
    `price list: 4 action(s) queued.`) or `error` (with the error message).
 4. **Sweep.** After the batch, `sweepOrphanedUploads()` removes stored files no action refers to.
 5. **Track.** The client polls `GET /api/jobs?ids=…`. When every job has left `analyzing`, the
-   response includes `actionIds` (highest confidence first) and the review modal opens on the first
-   one — unless the user is already reviewing something.
+   response includes each action's id and kind (highest confidence first) and a toast summarises the
+   batch (e.g. "2 new products, 1 update from price-list.pdf") with a **Review** link that opens the
+   modal on the batch's first action. Nothing opens by itself.
 6. **Review.** Edits are saved with `PATCH /api/queue/:id` (chosen product/variant, kind, field
    values, `disabled` flags).
 7. **Apply.** The modal saves edits first, then calls `POST /api/queue/:id/apply`. On success the
@@ -414,9 +415,9 @@ A single page (`src/app/page.tsx` → `Workspace`), all client components.
 - **`Workspace.tsx`** — shell, store banner, action queue with status filters (Needs review,
   Applied, Failed, Cancelled, All), clear-queue control. Polls `/api/queue` every 2s while any job
   is analyzing, and every 5s otherwise (paused while the tab is hidden) so sources arriving from a
-  channel appear without a reload. When a batch finishes it opens the review modal on that batch's first action and
-  lets the reviewer step through with **Next** — but only if no review is already open (tracked
-  through a ref, because the callback runs from a long-lived polling loop).
+  channel appear without a reload. When a batch finishes it shows a toast (`Toasts.tsx`, bottom
+  right, 10s, kept while hovered) summarising what was found; its **Review** link opens the modal on
+  that batch's first action and lets the reviewer step through with **Next**.
 - **`IntakePanel.tsx`** — dropzone (drag-and-drop or browse, multiple files) and a **Describe**
   tab for pasted text. The panel locks only for the upload request itself. Each batch then tracks
   itself in the background (polling `/api/jobs` every 1.2s, up to ~8 minutes), and a status line
