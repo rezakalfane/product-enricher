@@ -12,7 +12,7 @@ export type Toast = {
   link?: { label: string; onClick: () => void };
 };
 
-const DISMISS_AFTER_MS = 10_000;
+const DISMISS_AFTER_MS = 20_000;
 
 /** Bottom-right stack of transient notifications. Hovering one keeps it on screen. */
 export function ToastStack({ toasts, onDismiss }: { toasts: Toast[]; onDismiss: (id: string) => void }) {

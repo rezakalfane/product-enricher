@@ -416,7 +416,7 @@ A single page (`src/app/page.tsx` → `Workspace`), all client components.
   Applied, Failed, Cancelled, All), clear-queue control. Polls `/api/queue` every 2s while any job
   is analyzing, and every 5s otherwise (paused while the tab is hidden) so sources arriving from a
   channel appear without a reload. When a batch finishes it shows a toast (`Toasts.tsx`, bottom
-  right, 10s, kept while hovered) summarising what was found; its **Review** link opens the modal on
+  right, 20s, kept while hovered) summarising what was found; its **Review** link opens the modal on
   that batch's first action; the header's Previous / Next arrows (or ← →) step through it.
 - **`IntakePanel.tsx`** — dropzone (drag-and-drop or browse, multiple files) and a **Describe**
   tab for pasted text. The panel locks only for the upload request itself. Each batch then tracks
