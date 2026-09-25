@@ -38,6 +38,8 @@ export function Workspace() {
   const [openAction, setOpenAction] = useState<ActionView | null>(null);
   /** Action ids the reviewer can step through: the latest analysis, or the list they opened from. */
   const [reviewQueue, setReviewQueue] = useState<string[]>([]);
+  /** True while stepping between items, so the modal doesn't replay its opening animation. */
+  const [stepping, setStepping] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -104,6 +106,7 @@ export function Workspace() {
       if (openIdRef.current) return;
       setFilter('pending');
       setReviewQueue(actionIds);
+      setStepping(false);
       setOpenId(actionIds[0]);
     },
     [load],
@@ -132,8 +135,14 @@ export function Workspace() {
 
   const closeModal = useCallback(() => {
     setOpenId(null);
+    setOpenAction(null);
     setReviewQueue([]);
   }, []);
+
+  const stepTo = (id: string) => {
+    setStepping(true);
+    setOpenId(id);
+  };
 
   const pending = counts.pending ?? 0;
 
@@ -212,6 +221,7 @@ export function Workspace() {
                 <button
                   onClick={() => {
                     setReviewQueue(actions.map((x) => x.id));
+                    setStepping(false);
                     setOpenId(a.id);
                   }}
                   className="animate-fade-up flex w-full items-center gap-4 px-5 py-3.5 text-left transition hover:bg-bc-blue-50/40"
@@ -252,10 +262,12 @@ export function Workspace() {
         )}
       </section>
 
-      {openId && openAction?.id === openId && (
+      {/* While the next item loads, keep showing the current one rather than unmounting the modal. */}
+      {openId && openAction && (
         <ReviewModal
           key={openAction.id}
           action={openAction}
+          animateIn={!stepping}
           storeHash={store?.storeHash}
           onClose={closeModal}
           onChanged={load}
@@ -264,8 +276,8 @@ export function Workspace() {
               ? { index: queueIndex + 1, total: reviewQueue.length }
               : undefined
           }
-          onNext={hasNext ? () => setOpenId(reviewQueue[queueIndex + 1]) : undefined}
-          onPrev={hasPrev ? () => setOpenId(reviewQueue[queueIndex - 1]) : undefined}
+          onNext={hasNext ? () => stepTo(reviewQueue[queueIndex + 1]) : undefined}
+          onPrev={hasPrev ? () => stepTo(reviewQueue[queueIndex - 1]) : undefined}
         />
       )}
     </div>

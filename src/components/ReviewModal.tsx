@@ -32,6 +32,7 @@ type SearchHit = {
 
 export function ReviewModal({
   action,
+  animateIn = true,
   storeHash,
   onClose,
   onChanged,
@@ -40,6 +41,8 @@ export function ReviewModal({
   onPrev,
 }: {
   action: ActionView;
+  /** Play the opening animation. Off when stepping between items. */
+  animateIn?: boolean;
   /** Enables the Control Panel link on product cards. */
   storeHash?: string;
   onClose: () => void;
@@ -175,7 +178,10 @@ export function ReviewModal({
         aria-modal="true"
         aria-label={`Review: ${action.title}`}
         tabIndex={-1}
-        className="animate-scale-in flex max-h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-t-2xl bg-white shadow-2xl outline-none sm:rounded-2xl"
+        className={clsx(
+          'flex max-h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-t-2xl bg-white shadow-2xl outline-none sm:rounded-2xl',
+          animateIn && 'animate-scale-in',
+        )}
       >
         {/* Header */}
         <header className="flex items-start gap-4 border-b border-bc-line px-6 py-4">
